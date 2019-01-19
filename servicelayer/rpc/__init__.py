@@ -1,15 +1,22 @@
-import grpc
+import logging
+from banal import ensure_list
+from grpc import RpcError, StatusCode, insecure_channel
 
 from servicelayer import settings
+from servicelayer.rpc.ocr_pb2_grpc import RecognizeTextStub
+from servicelayer.rpc.ocr_pb2 import Image
+from servicelayer.rpc.common_pb2 import Text
+from servicelayer.rpc.entityextract_pb2 import ExtractedEntity  # noqa
+from servicelayer.rpc.entityextract_pb2_grpc import EntityExtractStub
+from servicelayer.util import backoff, service_retries
+
+log = logging.getLogger(__name__)
+TEMP_ERRORS = (StatusCode.UNAVAILABLE, StatusCode.RESOURCE_EXHAUSTED)
 
 
 class RpcMixin(object):
     """Helper mixing to manage the connectivity with a gRPC endpoint."""
     SERVICE = None
-    Error = grpc.RpcError
-    Status = grpc.StatusCode
-    TEMPORARY_ERRORS = (grpc.StatusCode.UNAVAILABLE,
-                        grpc.StatusCode.RESOURCE_EXHAUSTED)
 
     def has_channel(self):
         return self.SERVICE is not None
@@ -27,9 +34,55 @@ class RpcMixin(object):
                 ('grpc.max_connection_idle_ms', settings.GRPC_CONN_AGE),
                 ('grpc.lb_policy_name', settings.GRPC_LB_POLICY)
             )
-            self._channel = grpc.insecure_channel(self.SERVICE, options)
+            self._channel = insecure_channel(self.SERVICE, options)
         return self._channel
 
     def reset_channel(self):
         self._channel.close()
         self._channel = None
+
+
+class TextRecognizerService(RpcMixin):
+    SERVICE = settings.OCR_SERVICE
+
+    def Recognize(self, data, languages=None):
+        if not self.has_channel():
+            log.warning("gRPC: OCR not configured.")
+            return
+
+        for attempt in service_retries():
+            try:
+                service = RecognizeTextStub(self.channel)
+                languages = ensure_list(languages)
+                image = Image(data=data, languages=languages)
+                response = service.Recognize(image)
+                return response
+            except RpcError as e:
+                log.warning("gRPC [%s]: %s", e.code(), e.details())
+                if e.code() not in TEMP_ERRORS:
+                    return
+                self.reset_channel()
+                backoff(failures=attempt)
+
+
+class EntityExtractService(RpcMixin):
+    SERVICE = settings.NER_SERVICE
+
+    def Extract(self, text, languages):
+        if not self.has_channel():
+            log.warning("gRPC: entity extraction not configured.")
+            return
+
+        for attempt in service_retries():
+            try:
+                service = EntityExtractStub(self.channel)
+                req = Text(text=text, languages=languages)
+                for res in service.Extract(req):
+                    yield res
+                return
+            except RpcError as e:
+                log.warning("gRPC [%s]: %s", e.code(), e.details())
+                if e.code() not in TEMP_ERRORS:
+                    return
+                self.reset_channel()
+                backoff(failures=attempt)
