@@ -23,6 +23,8 @@ setup(
     include_package_data=True,
     zip_safe=True,
     install_requires=[
+        'banal',
+        'grpcio',
     ],
     tests_require=[
         'coverage'
