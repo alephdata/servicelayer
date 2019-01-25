@@ -3,9 +3,9 @@ from banal import ensure_list
 from grpc import RpcError, StatusCode, insecure_channel
 
 from servicelayer import settings
-from servicelayer.rpc.ocr_pb2_grpc import RecognizeTextStub
 from servicelayer.rpc.ocr_pb2 import Image
 from servicelayer.rpc.common_pb2 import Text
+from servicelayer.rpc.ocr_pb2_grpc import RecognizeTextStub
 from servicelayer.rpc.entityextract_pb2 import ExtractedEntity  # noqa
 from servicelayer.rpc.entityextract_pb2_grpc import EntityExtractStub
 from servicelayer.util import backoff, service_retries
@@ -55,8 +55,7 @@ class TextRecognizerService(RpcMixin):
                 service = RecognizeTextStub(self.channel)
                 languages = ensure_list(languages)
                 image = Image(data=data, languages=languages)
-                response = service.Recognize(image)
-                return response
+                return service.Recognize(image)
             except RpcError as e:
                 log.warning("gRPC [%s]: %s", e.code(), e.details())
                 if e.code() not in TEMP_ERRORS:
