@@ -25,6 +25,7 @@ setup(
     install_requires=[
         'banal',
         'grpcio',
+        'protobuf >= 3.6.1',
     ],
     tests_require=[
         'coverage'
