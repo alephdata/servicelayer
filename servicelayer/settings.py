@@ -27,6 +27,6 @@ AWS_SECRET_KEY = env.get('AWS_SECRET_ACCESS_KEY')
 AWS_REGION = env.get('AWS_REGION', 'eu-west-1')
 
 # Storage type (either 's3', 'gs', or 'file', i.e. local file system):
-ARCHIVE_TYPE = env('ARCHIVE_TYPE', 'file')
-ARCHIVE_BUCKET = env('ARCHIVE_BUCKET')
-ARCHIVE_PATH = env('ARCHIVE_PATH')
+ARCHIVE_TYPE = env.get('ARCHIVE_TYPE', 'file')
+ARCHIVE_BUCKET = env.get('ARCHIVE_BUCKET')
+ARCHIVE_PATH = env.get('ARCHIVE_PATH')

@@ -6,7 +6,7 @@ install:
 	pip install -q twine coverage nose
 
 test:
-	nosetests --with-coverage --cover-package=storagelayer --cover-erase
+	nosetests --with-coverage --cover-package=servicelayer --cover-erase
 
 build:
 	python setup.py sdist bdist_wheel
