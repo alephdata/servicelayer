@@ -9,6 +9,7 @@ def get_fakeredis(decode_responses=True):
 
 
 def get_redis(decode_responses=True):
+    """Create a redis connection."""
     from redis import ConnectionPool, Redis
     if settings.REDIS_URL is None:
         return get_fakeredis(decode_responses=True)

@@ -1,13 +1,9 @@
 from unittest import TestCase
 
+from servicelayer.util import service_retries
+
 
 class BasicTest(TestCase):
 
-    def setUp(self):
-        pass
-
-    def tearDown(self):
-        pass
-
     def test_basic(self):
-        pass
+        assert len(list(service_retries()))

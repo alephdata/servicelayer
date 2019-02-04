@@ -28,9 +28,15 @@ setup(
         'protobuf >= 3.6.1',
     ],
     tests_require=[
-        'coverage'
+        'twine',
+        'pytest',
+        'coverage',
+        'pytest-cov'
     ],
     test_suite='test',
     entry_points={
+        'servicelayer.test': [
+            'test = servicelayer.extensions:get_extensions',
+        ]
     }
 )
