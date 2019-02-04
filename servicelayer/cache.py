@@ -16,3 +16,10 @@ def get_redis(decode_responses=True):
         settings._redis_pool = ConnectionPool.from_url(settings.REDIS_URL)
     return Redis(connection_pool=settings._redis_pool,
                  decode_responses=decode_responses)
+
+
+def make_key(*criteria):
+    """Make a string key out of many criteria."""
+    criteria = [c or '' for c in criteria]
+    criteria = [str(c) for c in criteria]
+    return ':'.join(criteria)
