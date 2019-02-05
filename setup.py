@@ -26,6 +26,8 @@ setup(
         'banal',
         'grpcio',
         'protobuf >= 3.6.1',
+        'redis >= 2.10.6, < 3',
+        'fakeredis >= 1.0',
     ],
     tests_require=[
         'twine',

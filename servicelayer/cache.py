@@ -1,8 +1,10 @@
+from fakeredis import FakeRedis
+from redis import ConnectionPool, Redis
+
 from servicelayer import settings
 
 
-def get_fakeredis(decode_responses=True):
-    from fakeredis import FakeRedis
+def get_fakeredis(decode_responses=True):    
     if not hasattr(settings, '_redis_fake'):
         settings._redis_fake = FakeRedis(decode_responses=decode_responses)
     return settings._redis_fake
@@ -10,7 +12,6 @@ def get_fakeredis(decode_responses=True):
 
 def get_redis(decode_responses=True):
     """Create a redis connection."""
-    from redis import ConnectionPool, Redis
     if settings.REDIS_URL is None:
         return get_fakeredis(decode_responses=True)
     if not hasattr(settings, '_redis_pool'):
