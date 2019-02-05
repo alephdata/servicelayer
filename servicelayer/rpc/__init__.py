@@ -76,8 +76,7 @@ class EntityExtractService(RpcMixin):
             try:
                 service = EntityExtractStub(self.channel)
                 req = Text(text=text, languages=languages)
-                for res in service.Extract(req):
-                    yield res
+                yield from service.Extract(req)
                 return
             except RpcError as e:
                 log.warning("gRPC [%s]: %s", e.code(), e.details())

@@ -3,7 +3,7 @@ from banal.bools import as_bool
 
 
 def get(name, default=None):
-    value = environ.get('ALEPH_%s' % name)
+    value = environ.get(name)
     if value is not None:
         return str(value)
     if default is not None:
