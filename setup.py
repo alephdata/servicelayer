@@ -23,6 +23,7 @@ setup(
     include_package_data=True,
     zip_safe=True,
     install_requires=[
+        'six >= 1.12',
         'banal',
         'grpcio',
         'protobuf >= 3.6.1',
