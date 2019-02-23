@@ -3,6 +3,7 @@ __pycache__
 *.pyo
 *.egg-info
 .coverage
+.vscode
 
 dist/
 build/
