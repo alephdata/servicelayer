@@ -3,6 +3,8 @@ python:
   - "3.6"
 
 before_install:
+  - export BOTO_CONFIG=/dev/null
+  - sudo rm -f /etc/boto.cfg
   - sudo apt-get -qq update
   - sudo apt-get install -y libicu-dev
 

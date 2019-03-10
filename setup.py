@@ -26,6 +26,7 @@ setup(
         'six >= 1.12.0',
         'banal',
         'grpcio',
+        'normality >= 1.0.0',
         'protobuf >= 3.6.1',
         'redis >= 2.10.6, < 3',
         'fakeredis >= 1.0',
