@@ -36,17 +36,17 @@ setup(
         ],
         'google': [
             'google-cloud-storage >= 1.10.0',
+        ],
+        'dev': [
+            'twine',
+            'moto',
+            'boto3 >= 1.9.71',
+            'pytest',
+            'coverage',
+            'pytest-cov',
         ]
     },
-    tests_require=[
-        'twine',
-        'moto',
-        'boto3',
-        'pytest',
-        'coverage',
-        'pytest-cov'
-    ],
-    test_suite='test',
+    test_suite='tests',
     entry_points={
         'servicelayer.test': [
             'test = servicelayer.extensions:get_extensions',
