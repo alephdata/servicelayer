@@ -23,7 +23,7 @@ setup(
     include_package_data=True,
     zip_safe=True,
     install_requires=[
-        'six >= 1.12',
+        'six >= 1.12.0',
         'banal',
         'grpcio',
         'protobuf >= 3.6.1',
@@ -41,7 +41,7 @@ setup(
             'twine',
             'moto',
             'boto3 >= 1.9.71',
-            'pytest',
+            'pytest >= 3.6',
             'coverage',
             'pytest-cov',
         ]
