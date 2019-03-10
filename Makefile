@@ -3,7 +3,7 @@ all: clean install test
 
 install:
 	pip install -q -e .
-	pip install -q twine coverage nose
+	pip install -q twine coverage nose moto boto3
 
 test:
 	pytest --cov=servicelayer

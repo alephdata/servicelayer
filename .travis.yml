@@ -7,11 +7,10 @@ before_install:
   - sudo apt-get install -y libicu-dev
 
 install:
-  - pip install coverage twine nose
-  - pip install -e .
+  - pip install -e ".[dev]"
 
 script:
-  - nosetests --with-coverage --cover-package=servicelayer --cover-erase
+  - make test
 
 after_success:
   # push tag as well

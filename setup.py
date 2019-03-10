@@ -30,8 +30,18 @@ setup(
         'redis >= 2.10.6, < 3',
         'fakeredis >= 1.0',
     ],
+    extras_require={
+        'amazon': [
+            'boto3 >= 1.9.71',
+        ],
+        'google': [
+            'google-cloud-storage >= 1.10.0',
+        ]
+    },
     tests_require=[
         'twine',
+        'moto',
+        'boto3',
         'pytest',
         'coverage',
         'pytest-cov'
