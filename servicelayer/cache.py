@@ -10,14 +10,18 @@ def get_fakeredis():
     return settings._redis_fake
 
 
+def get_redis_pool():
+    if not hasattr(settings, '_redis_pool'):
+        settings._redis_pool = ConnectionPool.from_url(settings.REDIS_URL,
+                                                       decode_responses=True)
+    return settings._redis_pool
+
+
 def get_redis():
     """Create a redis connection."""
     if settings.REDIS_URL is None:
         return get_fakeredis()
-    if not hasattr(settings, '_redis_pool'):
-        settings._redis_pool = ConnectionPool.from_url(settings.REDIS_URL)
-    return Redis(connection_pool=settings._redis_pool,
-                 decode_responses=True)
+    return Redis(connection_pool=get_redis_pool(), decode_responses=True)
 
 
 def make_key(*criteria):
