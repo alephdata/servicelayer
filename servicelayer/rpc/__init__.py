@@ -4,10 +4,10 @@ from grpc import RpcError, StatusCode, insecure_channel
 
 from servicelayer import settings
 from servicelayer.rpc.ocr_pb2 import Image
-from servicelayer.rpc.common_pb2 import Text
+# from servicelayer.rpc.common_pb2 import Text
 from servicelayer.rpc.ocr_pb2_grpc import RecognizeTextStub
-from servicelayer.rpc.entityextract_pb2 import ExtractedEntity  # noqa
-from servicelayer.rpc.entityextract_pb2_grpc import EntityExtractStub
+# from servicelayer.rpc.entityextract_pb2 import ExtractedEntity  # noqa
+# from servicelayer.rpc.entityextract_pb2_grpc import EntityExtractStub
 from servicelayer.util import backoff, service_retries
 
 log = logging.getLogger(__name__)
@@ -64,23 +64,23 @@ class TextRecognizerService(RpcMixin):
                 backoff(failures=attempt)
 
 
-class EntityExtractService(RpcMixin):
-    SERVICE = settings.NER_SERVICE
+# class EntityExtractService(RpcMixin):
+#     SERVICE = settings.NER_SERVICE
 
-    def Extract(self, text, languages):
-        if not self.has_channel():
-            log.warning("gRPC: entity extraction not configured.")
-            return
+#     def Extract(self, text, languages):
+#         if not self.has_channel():
+#             log.warning("gRPC: entity extraction not configured.")
+#             return
 
-        for attempt in service_retries():
-            try:
-                service = EntityExtractStub(self.channel)
-                req = Text(text=text, languages=languages)
-                yield from service.Extract(req)
-                return
-            except RpcError as e:
-                log.warning("gRPC [%s]: %s", e.code(), e.details())
-                if e.code() not in TEMP_ERRORS:
-                    return
-                self.reset_channel()
-                backoff(failures=attempt)
+#         for attempt in service_retries():
+#             try:
+#                 service = EntityExtractStub(self.channel)
+#                 req = Text(text=text, languages=languages)
+#                 yield from service.Extract(req)
+#                 return
+#             except RpcError as e:
+#                 log.warning("gRPC [%s]: %s", e.code(), e.details())
+#                 if e.code() not in TEMP_ERRORS:
+#                     return
+#                 self.reset_channel()
+#                 backoff(failures=attempt)

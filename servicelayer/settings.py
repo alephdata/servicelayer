@@ -1,7 +1,6 @@
 from servicelayer import env
 
 # Redis cache
-REDIS_DEFAULT_URL = 'redis://redis:6379/0'
 REDIS_URL = env.get('REDIS_URL')
 REDIS_EXPIRE = env.to_int('REDIS_EXPIRE', 84600 * 7)
 
@@ -12,15 +11,8 @@ GRPC_CONN_AGE = env.to_int('GRPC_CONN_AGE', 500)
 # Microservice for OCR
 OCR_SERVICE = env.get('OCR_SERVICE')
 
-# Entity extraction service
-NER_SERVICE = env.get('NER_SERVICE')
-
-# Aleph client API settings
-ALEPH_HOST = env.get('MEMORIOUS_ALEPH_HOST')
-ALEPH_HOST = env.get('ALEPH_HOST', ALEPH_HOST)
-
-ALEPH_API_KEY = env.get('MEMORIOUS_ALEPH_API_KEY')
-ALEPH_API_KEY = env.get('ALEPH_API_KEY', ALEPH_API_KEY)
+# # Entity extraction service
+# NER_SERVICE = env.get('NER_SERVICE')
 
 # Amazon client credentials
 AWS_KEY_ID = env.get('AWS_ACCESS_KEY_ID')
