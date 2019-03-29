@@ -74,19 +74,23 @@ def poll_task():
 
 def get_status(dataset):
     conn = get_redis()
-    pending_tasks = conn.get(make_key('ingest', 'pending', dataset)) or 0
-    executing_tasks = conn.get(make_key('ingest', 'executing', dataset)) or 0
-    finished_tasks = conn.get(make_key('ingest', 'finished', dataset)) or 0
+    pending_tasks = int(conn.get(make_key('ingest', 'pending', dataset)) or 0)
+    executing_tasks = int(conn.get(make_key('ingest', 'executing', dataset)) or 0)  # noqa
+    finished_tasks = int(conn.get(make_key('ingest', 'finished', dataset)) or 0)  # noqa
     return {
-        'total': int(pending_tasks) + int(executing_tasks) + int(finished_tasks),  # noqa
-        'finished': int(finished_tasks),
+        'total': pending_tasks + executing_tasks + finished_tasks,
+        'finished': finished_tasks,
     }
 
 
 def mark_task_finished(dataset):
     conn = get_redis()
-    conn.decr(make_key('ingest', 'executing', dataset))
+    pending = int(conn.get(make_key('ingest', 'pending', dataset)) or 0)
+    executing = int(conn.decr(make_key('ingest', 'executing', dataset)) or 0)
     conn.incr(make_key('ingest', 'finished', dataset))
+    if pending == 0 and executing == 0:
+        reset_status(dataset)
+
 
 
 def reset_status(dataset):

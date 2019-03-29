@@ -41,6 +41,7 @@ class CacheTest(TestCase):
             'total': 2,
             'finished': 1
         }
-        reset_status(dataset)
+        # Test that marking all tasks as finished, resets the dataset
+        mark_task_finished(dataset)
         conn = get_redis()
         assert not conn.exists(make_key('ingest', 'pending', dataset))
