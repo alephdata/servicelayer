@@ -1,7 +1,10 @@
 from uuid import uuid4
 from unittest import TestCase
 
-from servicelayer.cache import get_redis, make_key
+from servicelayer.cache import (
+    get_redis, make_key, push_task, poll_task, get_status, reset_status,
+    mark_task_finished
+)
 
 
 class CacheTest(TestCase):
@@ -13,3 +16,31 @@ class CacheTest(TestCase):
         conn.set(key, 'banana')
         assert conn.get(key) == 'banana', conn.get(key)
         assert conn.exists(key)
+
+    def test_task_queue(self):
+        dataset = 'us-fake'
+        entity1 = {
+            'id': 'fake-entity-1',
+        }
+        entity2 = {
+            'id': 'fake-entity-2',
+        }
+        config = {
+            'ocr_langs': ['en', 'fr']
+        }
+        push_task('QUEUE_HIGH', dataset, entity1, config)
+        push_task('QUEUE_LOW', dataset, entity2, config)
+        assert get_status(dataset) == {
+            'total': 2,
+            'finished': 0,
+        }
+        task = yield from poll_task()
+        assert task == (dataset, entity1, config)
+        mark_task_finished(dataset)
+        assert get_status(dataset) == {
+            'total': 2,
+            'finished': 1
+        }
+        reset_status(dataset)
+        conn = get_redis()
+        assert not conn.exists(make_key('ingest', 'pending', dataset))

@@ -23,3 +23,8 @@ AWS_REGION = env.get('AWS_REGION', 'eu-west-1')
 ARCHIVE_TYPE = env.get('ARCHIVE_TYPE', 'file')
 ARCHIVE_BUCKET = env.get('ARCHIVE_BUCKET')
 ARCHIVE_PATH = env.get('ARCHIVE_PATH')
+
+QUEUES = [
+    'QUEUE_HIGH',
+    'QUEUE_LOW',
+]
