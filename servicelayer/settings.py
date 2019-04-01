@@ -14,6 +14,13 @@ OCR_SERVICE = env.get('OCR_SERVICE')
 # # Entity extraction service
 # NER_SERVICE = env.get('NER_SERVICE')
 
+# Aleph client API settings
+ALEPH_HOST = env.get('MEMORIOUS_ALEPH_HOST')
+ALEPH_HOST = env.get('ALEPH_HOST', ALEPH_HOST)
+
+ALEPH_API_KEY = env.get('MEMORIOUS_ALEPH_API_KEY')
+ALEPH_API_KEY = env.get('ALEPH_API_KEY', ALEPH_API_KEY)
+
 # Amazon client credentials
 AWS_KEY_ID = env.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_KEY = env.get('AWS_SECRET_ACCESS_KEY')
