@@ -5,6 +5,11 @@ from redis import ConnectionPool, Redis
 
 from servicelayer import settings
 
+TASK_PENDING = 'pending'
+TASK_RUNNING = 'executing'
+TASK_FINISHED = 'finished'
+TASK_TOTAL = 'total'
+
 
 def get_fakeredis():
     if not hasattr(settings, '_redis_fake'):
@@ -49,7 +54,7 @@ def push_task(queue, dataset, entity, config):
         'entity': entity,
         'config': config,
     }))
-    conn.incr(make_key('ingest', 'pending', dataset))
+    conn.incr(make_key('ingest', TASK_PEDNING, dataset))
 
 
 def poll_task():
@@ -67,27 +72,27 @@ def poll_task():
         entity = task_data["entity"]
         config = task_data["config"]
         dataset = task_data["dataset"]
-        conn.decr(make_key('ingest', 'pending', dataset))
-        conn.incr(make_key('ingest', 'executing', dataset))
+        conn.decr(make_key('ingest', TASK_PEDNING, dataset))
+        conn.incr(make_key('ingest', TASK_RUNNING, dataset))
         yield (dataset, entity, config)
 
 
 def get_status(dataset):
     conn = get_redis()
-    pending_tasks = int(conn.get(make_key('ingest', 'pending', dataset)) or 0)
-    executing_tasks = int(conn.get(make_key('ingest', 'executing', dataset)) or 0)  # noqa
-    finished_tasks = int(conn.get(make_key('ingest', 'finished', dataset)) or 0)  # noqa
+    pending_tasks = int(conn.get(make_key('ingest', TASK_PEDNING, dataset)) or 0)  # noqa
+    executing_tasks = int(conn.get(make_key('ingest', TASK_RUNNING, dataset)) or 0)  # noqa
+    finished_tasks = int(conn.get(make_key('ingest', TASK_FINISHED, dataset)) or 0)  # noqa
     return {
-        'total': pending_tasks + executing_tasks + finished_tasks,
-        'finished': finished_tasks,
+        TASK_TOTAL: pending_tasks + executing_tasks + finished_tasks,
+        TASK_FINISHED: finished_tasks,
     }
 
 
 def mark_task_finished(dataset):
     conn = get_redis()
-    pending = int(conn.get(make_key('ingest', 'pending', dataset)) or 0)
-    executing = int(conn.decr(make_key('ingest', 'executing', dataset)) or 0)
-    conn.incr(make_key('ingest', 'finished', dataset))
+    pending = int(conn.get(make_key('ingest', TASK_PEDNING, dataset)) or 0)
+    executing = int(conn.decr(make_key('ingest', TASK_RUNNING, dataset)) or 0)
+    conn.incr(make_key('ingest', TASK_FINISHED, dataset))
     if pending == 0 and executing == 0:
         reset_status(dataset)
 
@@ -95,6 +100,6 @@ def mark_task_finished(dataset):
 
 def reset_status(dataset):
     conn = get_redis()
-    conn.delete(make_key('ingest', 'pending', dataset))
-    conn.delete(make_key('ingest', 'executing', dataset))
-    conn.delete(make_key('ingest', 'finished', dataset))
+    conn.delete(make_key('ingest', TASK_PEDNING, dataset))
+    conn.delete(make_key('ingest', TASK_RUNNING, dataset))
+    conn.delete(make_key('ingest', TASK_FINISHED, dataset))
