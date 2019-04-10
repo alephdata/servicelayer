@@ -1,12 +1,14 @@
 import json
+from random import shuffle
 
 from servicelayer import settings
 from servicelayer.cache import get_redis, make_key
 
-TASK_PENDING = 'pending'
-TASK_RUNNING = 'executing'
-TASK_FINISHED = 'finished'
-TASK_TOTAL = 'total'
+TASK_PENDING = 'pending_tasks'
+TASK_RUNNING = 'executing_tasks'
+TASK_FINISHED = 'finished_tasks'
+TASK_TOTAL = 'total_tasks'
+INGESTION_FINISHED = 'ingestion_done'
 
 
 def _serialize(data):
@@ -17,10 +19,15 @@ def _deserialize(data):
     return json.loads(data)
 
 
-def push_task(queue, dataset, entity, config):
-    assert queue in settings.QUEUES
+def push_task(priority, dataset, entity, config):
+    assert priority in settings.QUEUE_PRIORITIES
     conn = get_redis()
-    conn.rpush(make_key('ingest', 'queue', queue), _serialize({
+    conn.sadd(make_key('ingest', 'queues', priority), dataset)
+    # remove dataset from queue-sets of other priorities
+    for pr in settings.QUEUE_PRIORITIES:
+        if pr != priority:
+            conn.srem(make_key('ingest', 'queues', pr), dataset)
+    conn.rpush(make_key('ingest', 'queue', dataset), _serialize({
         'dataset': dataset,
         'entity': entity,
         'config': config,
@@ -30,7 +37,14 @@ def push_task(queue, dataset, entity, config):
 
 def poll_task():
     conn = get_redis()
-    queues = [make_key('ingest', 'queue', q) for q in settings.QUEUES]
+    queues = []
+    # Sort the queues by priority and shuffle the queues with the same
+    # priority
+    for priority in settings.QUEUE_PRIORITIES:
+        datasets = list(conn.smembers(make_key('ingest', 'queues', priority)))
+        shuffle(datasets)
+        queues = queues + datasets
+    queues = [make_key('ingest', 'queue', ds) for ds in queues]
     while True:
         task_data_tuple = conn.blpop(queues)
         # blpop blocks until it finds something. But fakeredis has no
@@ -53,9 +67,17 @@ def get_status(dataset):
     pending_tasks = int(conn.get(make_key('ingest', TASK_PENDING, dataset)) or 0)  # noqa
     executing_tasks = int(conn.get(make_key('ingest', TASK_RUNNING, dataset)) or 0)  # noqa
     finished_tasks = int(conn.get(make_key('ingest', TASK_FINISHED, dataset)) or 0)  # noqa
+    total_tasks = pending_tasks + executing_tasks + finished_tasks
+    # For a dataset that has been fully ingested, TASK_TOTAL and TASK_FINISHED
+    # will both be 0
+    ingestion_finished = False
+    if (total_tasks == 0 and finished_tasks == 0 and
+            conn.sismember(make_key('ingest', 'queues', 'finished'), dataset)):
+        ingestion_finished = True
     return {
-        TASK_TOTAL: pending_tasks + executing_tasks + finished_tasks,
+        TASK_TOTAL: total_tasks,
         TASK_FINISHED: finished_tasks,
+        INGESTION_FINISHED: ingestion_finished,
     }
 
 
@@ -65,6 +87,9 @@ def mark_task_finished(dataset):
     executing = int(conn.decr(make_key('ingest', TASK_RUNNING, dataset)) or 0)
     conn.incr(make_key('ingest', TASK_FINISHED, dataset))
     if pending == 0 and executing == 0:
+        # All tasks are done; add it to the set of finished datasets so that
+        # we can push the ingested entities to Aleph
+        conn.sadd(make_key('ingest', 'queues', 'finished'), dataset)
         reset_status(dataset)
 
 
@@ -73,3 +98,4 @@ def reset_status(dataset):
     conn.delete(make_key('ingest', TASK_PENDING, dataset))
     conn.delete(make_key('ingest', TASK_RUNNING, dataset))
     conn.delete(make_key('ingest', TASK_FINISHED, dataset))
+    conn.delete(make_key('ingest', 'queue', dataset))
