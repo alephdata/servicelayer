@@ -1,5 +1,9 @@
 import json
+import logging
 from random import shuffle
+import time
+
+from followthemoney import model
 
 from servicelayer import settings
 from servicelayer.cache import get_redis, make_key
@@ -9,17 +13,24 @@ TASK_RUNNING = 'executing_tasks'
 TASK_FINISHED = 'finished_tasks'
 TASK_TOTAL = 'total_tasks'
 INGESTION_FINISHED = 'ingestion_done'
+SLEEP = 5
+
+
+log = logging.getLogger(__name__)
 
 
 def _serialize(data):
+    data['entity'] = data['entity'].to_dict()
     return json.dumps(data)
 
 
 def _deserialize(data):
-    return json.loads(data)
+    data = json.loads(data)
+    data['entity'] = model.get_proxy(data['entity'])
+    return data
 
 
-def push_task(priority, dataset, entity, config):
+def push_task(priority, dataset, entity, context):
     assert priority in settings.QUEUE_PRIORITIES
     conn = get_redis()
     conn.sadd(make_key('ingest', 'queues', priority), dataset)
@@ -30,12 +41,12 @@ def push_task(priority, dataset, entity, config):
     conn.rpush(make_key('ingest', 'queue', dataset), _serialize({
         'dataset': dataset,
         'entity': entity,
-        'config': config,
+        'context': context,
     }))
     conn.incr(make_key('ingest', TASK_PENDING, dataset))
 
 
-def poll_task():
+def _get_queues():
     conn = get_redis()
     queues = []
     # Sort the queues by priority and shuffle the queues with the same
@@ -45,7 +56,18 @@ def poll_task():
         shuffle(datasets)
         queues = queues + datasets
     queues = [make_key('ingest', 'queue', ds) for ds in queues]
+    return queues
+
+
+def poll_task():
+    conn = get_redis()
     while True:
+        # Fetch queues afresh because they may have been updated
+        queues = _get_queues()
+        log.info(queues)
+        if not queues:
+            time.sleep(SLEEP)
+            continue
         task_data_tuple = conn.blpop(queues)
         # blpop blocks until it finds something. But fakeredis has no
         # blocking support. So it justs returns None.
@@ -55,11 +77,11 @@ def poll_task():
         key, json_data = task_data_tuple
         task_data = _deserialize(json_data)
         entity = task_data["entity"]
-        config = task_data["config"]
+        context = task_data["context"]
         dataset = task_data["dataset"]
         conn.decr(make_key('ingest', TASK_PENDING, dataset))
         conn.incr(make_key('ingest', TASK_RUNNING, dataset))
-        yield (dataset, entity, config)
+        yield (dataset, entity, context)
 
 
 def get_status(dataset):
