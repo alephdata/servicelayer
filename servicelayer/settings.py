@@ -1,4 +1,3 @@
-import multiprocessing
 from servicelayer import env
 
 # Redis cache
@@ -34,7 +33,3 @@ QUEUE_PRIORITIES = [
     QUEUE_MEDIUM,
     QUEUE_LOW,
 ]
-
-INGESTOR_THREADS = env.to_int(
-    'INGESTOR_THREADS', min(8, multiprocessing.cpu_count())
-)

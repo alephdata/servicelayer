@@ -3,8 +3,6 @@ import logging
 from random import shuffle
 import time
 
-from followthemoney import model
-
 from servicelayer import settings
 from servicelayer.cache import get_redis, make_key
 
@@ -20,14 +18,11 @@ log = logging.getLogger(__name__)
 
 
 def _serialize(data):
-    data['entity'] = data['entity'].to_dict()
     return json.dumps(data)
 
 
 def _deserialize(data):
-    data = json.loads(data)
-    data['entity'] = model.get_proxy(data['entity'])
-    return data
+    return json.loads(data)
 
 
 def push_task(priority, dataset, entity, context):
