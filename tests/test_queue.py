@@ -1,73 +1,69 @@
 from unittest import TestCase
 
-from servicelayer.cache import get_redis, make_key
-from servicelayer.queue import (
-    push_task, poll_task, get_status, mark_task_finished,
-    TASK_TOTAL, TASK_FINISHED, INGESTION_FINISHED,
-)
-from servicelayer.settings import QUEUE_HIGH, QUEUE_LOW
+from servicelayer.cache import get_fakeredis
+from servicelayer.queue import ServiceQueue, RateLimit, Progress
 
 
 class QueueTest(TestCase):
 
-    def test_task_queue(self):
-        dataset1 = 'us-fake-1'
-        dataset2 = 'us-fake-2'
-        entity1 = {
-            'id': 'fake-entity-1',
-        }
-        entity2 = {
-            'id': 'fake-entity-2',
-        }
-        config = {
-            'ocr_langs': ['en', 'fr']
-        }
-        push_task(QUEUE_LOW, dataset1, entity1, config)
-        push_task(QUEUE_HIGH, dataset1, entity2, config)
-        push_task(QUEUE_LOW, dataset2, entity1, config)
-        conn = get_redis()
-        assert conn.sismember(
-            make_key('ingest', 'queues', QUEUE_HIGH), dataset1
-        )
-        assert not conn.sismember(
-            make_key('ingest', 'queues', QUEUE_LOW), dataset1
-        )
-        assert conn.sismember(
-            make_key('ingest', 'queues', QUEUE_LOW), dataset2
-        )
+    def test_service_queue(self):
+        conn = get_fakeredis()
+        ds = 'test_1'
+        queue = ServiceQueue(conn, ServiceQueue.OP_INGEST, ds)
+        status = queue.progress.get()
+        assert status['pending'] == 0
+        assert status['finished'] == 0
+        queue.queue_task({'test': 'foo'}, {})
+        status = queue.progress.get()
+        assert status['pending'] == 1
+        assert status['finished'] == 0
+        task = ServiceQueue.get_operation_task(conn, ServiceQueue.OP_INGEST)
+        nq, payload, context = task
+        assert nq.dataset == queue.dataset
+        assert payload['test'] == 'foo'
+        status = queue.progress.get()
+        assert status['pending'] == 1
+        assert status['finished'] == 0
+        queue.task_done()
+        status = queue.progress.get()
+        assert status['pending'] == 0
+        assert status['finished'] == 1
+        task = ServiceQueue.get_operation_task(conn, ServiceQueue.OP_INGEST,
+                                               timeout=1)
+        nq, payload, context = task
+        assert payload is None
+        queue.remove()
+        status = queue.progress.get()
+        assert status['pending'] == 0
+        assert status['finished'] == 0
 
-        assert get_status(dataset1) == {
-            TASK_TOTAL: 2,
-            TASK_FINISHED: 0,
-            INGESTION_FINISHED: False,
-        }
-        assert get_status(dataset2) == {
-            TASK_TOTAL: 1,
-            TASK_FINISHED: 0,
-            INGESTION_FINISHED: False,
-        }
-        task = next(poll_task())
-        assert (task == (dataset1, entity1, config) or
-                task == (dataset1, entity2, config))
-        mark_task_finished(dataset1)
-        assert get_status(dataset1) == {
-            TASK_TOTAL: 2,
-            TASK_FINISHED: 1,
-            INGESTION_FINISHED: False,
-        }
-        task = next(poll_task())
-        assert (task == (dataset1, entity1, config) or
-                task == (dataset1, entity2, config))
-        # Test that marking all tasks as finished, resets the dataset
-        mark_task_finished(dataset1)
-        assert get_status(dataset1) == {
-            TASK_TOTAL: 0,
-            TASK_FINISHED: 0,
-            INGESTION_FINISHED: True,
-        }
-        assert not conn.exists(make_key('ingest', 'pending', dataset1))
-        assert conn.sismember(
-            make_key('ingest', 'queues', 'finished'), dataset1
-        )
-        task = next(poll_task())
-        assert task == (dataset2, entity1, config)
+    def test_progress(self):
+        conn = get_fakeredis()
+        ds = 'test_2'
+        progress = Progress(conn, ServiceQueue.OP_INGEST, ds)
+        status = progress.get()
+        assert status['pending'] == 0
+        assert status['finished'] == 0
+        progress.mark_pending()
+        status = progress.get()
+        assert status['pending'] == 1
+        assert status['finished'] == 0
+        full = Progress.get_dataset_status(conn, ds)
+        assert full['pending'] == 1
+        progress.mark_finished()
+        status = progress.get()
+        assert status['pending'] == 0
+        assert status['finished'] == 1
+        progress.remove()
+        status = progress.get()
+        assert status['finished'] == 0
+
+    def test_rate(self):
+        conn = get_fakeredis()
+        limit = RateLimit(conn, 'banana', limit=10)
+        assert limit.check()
+        limit.update()
+        assert limit.check()
+        for i in range(13):
+            limit.update()
+        assert not limit.check()
