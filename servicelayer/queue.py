@@ -72,6 +72,8 @@ class ServiceQueue(object):
         """Retrieve a single task from the highest-priority queue that has
         work pending."""
         queues = cls._get_operation_queues(conn, operations)
+        if not len(queues):
+            return (None, None, None)
         task_data_tuple = conn.blpop(queues, timeout=timeout)
         # blpop blocks until it finds something. But fakeredis has no
         # blocking support. So it justs returns None.
@@ -84,6 +86,14 @@ class ServiceQueue(object):
         dataset = task.get('dataset')
         queue = cls(conn, operation, dataset, priority=task.get('priority'))
         return (queue, task.get('payload'), task.get('context'))
+
+    @classmethod
+    def remove_dataset(cls, conn, dataset):
+        """Delete all known queues associated with a dataset."""
+        for operation in Progress.get_dataset_operations(conn, dataset):
+            for priority in cls.PRIORITIES:
+                queue = cls(conn, operation, dataset, priority=priority)
+                queue.remove()
 
 
 class Progress(object):
@@ -125,11 +135,14 @@ class Progress(object):
         }
 
     @classmethod
+    def get_dataset_operations(cls, conn, dataset):
+        return conn.smembers(make_key(PREFIX, 'qd', dataset))
+
+    @classmethod
     def get_dataset_status(cls, conn, dataset):
         """Aggregate status for all operations on the given dataset."""
         status = {'finished': 0, 'pending': 0, 'operations': []}
-        operations = conn.smembers(make_key(PREFIX, 'qd', dataset))
-        for operation in operations:
+        for operation in cls.get_dataset_operations(conn, dataset):
             progress = cls(conn, operation, dataset).get()
             status['operations'].append(progress)
             status['finished'] += progress['finished']

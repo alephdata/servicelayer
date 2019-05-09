@@ -37,6 +37,17 @@ class QueueTest(TestCase):
         assert status['pending'] == 0
         assert status['finished'] == 0
 
+    def test_queue_clear(self):
+        conn = get_fakeredis()
+        ds = 'test_1'
+        queue = ServiceQueue(conn, ServiceQueue.OP_INGEST, ds)
+        queue.queue_task({'test': 'foo'}, {})
+        status = queue.progress.get()
+        assert status['pending'] == 1
+        ServiceQueue.remove_dataset(conn, ds)
+        status = queue.progress.get()
+        assert status['pending'] == 0
+
     def test_progress(self):
         conn = get_fakeredis()
         ds = 'test_2'
