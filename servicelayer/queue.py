@@ -17,7 +17,7 @@ class ServiceQueue(object):
     OP_ANALYSIS = 'analysis'
 
     PRIO_HIGH = 3
-    PRIO_MEDIUM = 2 
+    PRIO_MEDIUM = 2
     PRIO_LOW = 1
     PRIORITIES = [PRIO_HIGH, PRIO_MEDIUM, PRIO_LOW]
 
