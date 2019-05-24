@@ -31,6 +31,7 @@ class ServiceQueue(object):
         self.ops_queue_key = make_key(PREFIX, 'qo', operation, priority)
 
     def queue_task(self, payload, context):
+        self.conn.sadd(self.ops_queue_key, self.queue_key)
         data = json.dumps({
             'context': context or {},
             'payload': payload,
@@ -38,17 +39,19 @@ class ServiceQueue(object):
             'operation': self.operation,
             'priority': self.priority
         })
-        self.conn.sadd(self.ops_queue_key, self.queue_key)
         self.conn.rpush(self.queue_key, data)
         self.progress.mark_pending()
 
     def task_done(self):
         self.progress.mark_finished()
 
+    def is_done(self):
+        status = self.progress.get()
+        return status.get('pending') < 1
+
     def remove(self):
         self.conn.sadd(self.ops_queue_key, self.queue_key)
         self.conn.delete(self.queue_key)
-        self.conn.srem(self.progress.dataset_key, self.operation)
         self.progress.remove()
 
     @classmethod
@@ -113,25 +116,38 @@ class Progress(object):
         self.pending_key = make_key(_key, self.PENDING)
         self.finished_key = make_key(_key, self.FINISHED)
 
-    def mark_pending(self, amount=1):
+    def mark_active(self):
+        """Add the dataset to the list of datasets that are
+        running."""
         self.conn.sadd(self.dataset_key, self.operation)
+
+    def mark_pending(self, amount=1):
+        self.mark_active()
         self.conn.incr(self.pending_key, amount=amount)
 
     def mark_finished(self, amount=1):
+        """Move items from the pending to the finished set."""
         self.conn.decr(self.pending_key, amount=amount)
         self.conn.incr(self.finished_key, amount=amount)
 
+    def put_finished(self, amount=1):
+        """Add a number of items to the finished set without reducing
+        the count of pending items."""
+        self.mark_active()
+        self.conn.incr(self.finished_key, amount=amount)
+
     def remove(self):
+        self.conn.srem(self.dataset_key, self.operation)
         self.conn.delete(self.pending_key, self.finished_key)
 
     def get(self):
-        """Get the values."""
+        """Get the current status."""
         keys = (self.pending_key, self.finished_key)
         pending, finished = self.conn.mget(keys)
         return {
             'operation': self.operation,
-            'pending': int(pending or 0),
-            'finished': int(finished or 0),
+            'pending': max(0, int(pending or 0)),
+            'finished': max(0, int(finished or 0)),
         }
 
     @classmethod
