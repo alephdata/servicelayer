@@ -89,7 +89,8 @@ class ServiceQueue(object):
             task = json.loads(json_data)
             operation = task.get('operation')
             dataset = task.get('dataset')
-            queue = cls(conn, operation, dataset, priority=task.get('priority'))
+            priority = task.get('priority')
+            queue = cls(conn, operation, dataset, priority=priority)
             return (queue, task.get('payload'), task.get('context'))
         except BusyLoadingError:
             time.sleep(timeout + 1)
