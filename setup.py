@@ -23,13 +23,12 @@ setup(
     include_package_data=True,
     zip_safe=True,
     install_requires=[
-        'six >= 1.12.0',
         'banal',
-        'grpcio',
+        'grpcio >= 1.21.1',
         'normality >= 1.0.0',
         'protobuf >= 3.6.1',
-        'redis >= 2.10.6, < 3',
-        'fakeredis >= 1.0',
+        'redis >= 3.2.1',
+        'fakeredis >= 1.0.3',
     ],
     extras_require={
         'amazon': [

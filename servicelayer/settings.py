@@ -2,7 +2,9 @@ from servicelayer import env
 
 # Redis cache
 REDIS_URL = env.get('REDIS_URL')
-REDIS_EXPIRE = env.to_int('REDIS_EXPIRE', 84600 * 7)
+REDIS_SHORT = 84700
+REDIS_LONG = REDIS_SHORT * 200
+REDIS_EXPIRE = env.to_int('REDIS_EXPIRE', REDIS_SHORT * 7)
 
 # General gRPC settings
 GRPC_LB_POLICY = env.get('GRPC_LB_POLICY', 'round_robin')

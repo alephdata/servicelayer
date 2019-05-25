@@ -1,10 +1,10 @@
 from unittest import TestCase
 
 from servicelayer.cache import get_fakeredis
-from servicelayer.queue import ServiceQueue, RateLimit, Progress
+from servicelayer.process import ServiceQueue, RateLimit, Progress
 
 
-class QueueTest(TestCase):
+class ProcessTest(TestCase):
 
     def test_service_queue(self):
         conn = get_fakeredis()
@@ -13,10 +13,12 @@ class QueueTest(TestCase):
         status = queue.progress.get()
         assert status['pending'] == 0
         assert status['finished'] == 0
+        assert queue.is_done()
         queue.queue_task({'test': 'foo'}, {})
         status = queue.progress.get()
         assert status['pending'] == 1
         assert status['finished'] == 0
+        assert not queue.is_done()
         task = ServiceQueue.get_operation_task(conn, ServiceQueue.OP_INGEST)
         nq, payload, context = task
         assert nq.dataset == queue.dataset

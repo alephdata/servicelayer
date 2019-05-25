@@ -4,7 +4,7 @@ import random
 import logging
 from banal import ensure_list
 
-# from servicelayer.settings import REDIS_EXPIRE
+from servicelayer.settings import REDIS_LONG
 from servicelayer.cache import make_key
 
 log = logging.getLogger(__name__)
@@ -138,6 +138,7 @@ class Progress(object):
 
     def remove(self):
         self.conn.srem(self.dataset_key, self.operation)
+        self.conn.expire(self.dataset_key, REDIS_LONG)
         self.conn.delete(self.pending_key, self.finished_key)
 
     def get(self):
