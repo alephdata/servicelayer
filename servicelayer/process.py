@@ -3,6 +3,7 @@ import time
 import random
 import logging
 from banal import ensure_list
+from redis.exceptions import BusyLoadingError
 
 from servicelayer.settings import REDIS_LONG
 from servicelayer.cache import make_key
@@ -74,21 +75,25 @@ class ServiceQueue(object):
     def get_operation_task(cls, conn, operations, timeout=0):
         """Retrieve a single task from the highest-priority queue that has
         work pending."""
-        queues = cls._get_operation_queues(conn, operations)
-        if not len(queues):
-            return (None, None, None)
-        task_data_tuple = conn.blpop(queues, timeout=timeout)
-        # blpop blocks until it finds something. But fakeredis has no
-        # blocking support. So it justs returns None.
-        if task_data_tuple is None:
-            return (None, None, None)
+        try:
+            queues = cls._get_operation_queues(conn, operations)
+            if not len(queues):
+                return (None, None, None)
+            task_data_tuple = conn.blpop(queues, timeout=timeout)
+            # blpop blocks until it finds something. But fakeredis has no
+            # blocking support. So it justs returns None.
+            if task_data_tuple is None:
+                return (None, None, None)
 
-        key, json_data = task_data_tuple
-        task = json.loads(json_data)
-        operation = task.get('operation')
-        dataset = task.get('dataset')
-        queue = cls(conn, operation, dataset, priority=task.get('priority'))
-        return (queue, task.get('payload'), task.get('context'))
+            key, json_data = task_data_tuple
+            task = json.loads(json_data)
+            operation = task.get('operation')
+            dataset = task.get('dataset')
+            queue = cls(conn, operation, dataset, priority=task.get('priority'))
+            return (queue, task.get('payload'), task.get('context'))
+        except BusyLoadingError:
+            time.sleep(timeout + 1)
+            return (None, None, None)
 
     @classmethod
     def remove_dataset(cls, conn, dataset):
