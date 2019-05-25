@@ -24,6 +24,7 @@ setup(
     zip_safe=True,
     install_requires=[
         'banal',
+        'six >= 1.12.0',
         'grpcio >= 1.21.1',
         'normality >= 1.0.0',
         'protobuf >= 3.6.1',
