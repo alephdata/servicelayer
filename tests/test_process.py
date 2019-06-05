@@ -19,7 +19,8 @@ class ProcessTest(TestCase):
         assert status['pending'] == 1
         assert status['finished'] == 0
         assert not queue.is_done()
-        task = ServiceQueue.get_operation_task(conn, ServiceQueue.OP_INGEST)
+        task = ServiceQueue.get_operation_task(conn, ServiceQueue.OP_INGEST,
+                                               timeout=None)
         nq, payload, context = task
         assert nq.dataset == queue.dataset
         assert payload['test'] == 'foo'

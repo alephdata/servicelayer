@@ -79,14 +79,22 @@ class ServiceQueue(object):
             queues = cls._get_operation_queues(conn, operations)
             if not len(queues):
                 return (None, None, None)
-            task_data_tuple = conn.blpop(queues, timeout=timeout)
-            # blpop blocks until it finds something. But fakeredis has no
-            # blocking support. So it justs returns None.
-            if task_data_tuple is None:
+            # Support a magic value to not block, i.e. timeout None
+            if timeout is None:
+                # LPOP does not support multiple lists.
+                for queue in queues:
+                    task_data = conn.lpop(queue)
+                    if task_data is not None:
+                        break
+            else:
+                task_data = conn.blpop(queues, timeout=timeout)
+                if task_data is not None:
+                    key, task_data = task_data
+
+            if task_data is None:
                 return (None, None, None)
 
-            key, json_data = task_data_tuple
-            task = json.loads(json_data)
+            task = json.loads(task_data)
             operation = task.get('operation')
             dataset = task.get('dataset')
             priority = task.get('priority')
