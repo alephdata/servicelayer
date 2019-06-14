@@ -1,4 +1,5 @@
 import logging
+import threading
 from banal import ensure_list
 from grpc import RpcError, StatusCode, insecure_channel
 
@@ -11,7 +12,9 @@ from servicelayer.rpc.ocr_pb2_grpc import RecognizeTextStub
 from servicelayer.util import backoff, service_retries
 
 log = logging.getLogger(__name__)
-TEMP_ERRORS = (StatusCode.UNAVAILABLE, StatusCode.RESOURCE_EXHAUSTED)
+TEMP_ERRORS = (StatusCode.CANCELLED,
+               StatusCode.UNAVAILABLE,
+               StatusCode.RESOURCE_EXHAUSTED)
 
 
 class RpcMixin(object):
@@ -26,7 +29,9 @@ class RpcMixin(object):
         """Lazily connect to the RPC service."""
         if not self.has_channel():
             return
-        if not hasattr(self, '_channel') or self._channel is None:
+        if not hasattr(self, 'tl') or self.tl is None:
+            self.tl = threading.local()
+        if not hasattr(self.tl, 'channel') or self.tl.channel is None:
             options = (
                 # ('grpc.keepalive_time_ms', settings.GRPC_CONN_AGE),
                 ('grpc.keepalive_timeout_ms', settings.GRPC_CONN_AGE),
@@ -34,12 +39,15 @@ class RpcMixin(object):
                 ('grpc.max_connection_idle_ms', settings.GRPC_CONN_AGE),
                 ('grpc.lb_policy_name', settings.GRPC_LB_POLICY)
             )
-            self._channel = insecure_channel(self.SERVICE, options)
-        return self._channel
+            self.tl.channel = insecure_channel(self.SERVICE, options)
+        return self.tl.channel
 
     def reset_channel(self):
-        self._channel.close()
-        self._channel = None
+        try:
+            self.tl.channel.close()
+        except Exception:
+            log.exception("Cannot close gRPC connection")
+        self.tl.channel = None
 
 
 class TextRecognizerService(RpcMixin):
@@ -58,9 +66,9 @@ class TextRecognizerService(RpcMixin):
                 return service.Recognize(image)
             except RpcError as e:
                 log.warning("gRPC [%s]: %s", e.code(), e.details())
+                self.reset_channel()
                 if e.code() not in TEMP_ERRORS:
                     return
-                self.reset_channel()
                 backoff(failures=attempt)
 
 
