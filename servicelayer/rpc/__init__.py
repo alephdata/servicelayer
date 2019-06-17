@@ -46,7 +46,7 @@ class RpcMixin(object):
         try:
             self.tl.channel.close()
         except Exception:
-            log.exception("Cannot close gRPC connection")
+            log.warning("Cannot close gRPC connection")
         self.tl.channel = None
 
 
