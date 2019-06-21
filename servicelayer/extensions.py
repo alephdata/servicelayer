@@ -1,21 +1,23 @@
 import logging
+from threading import RLock
 from pkg_resources import iter_entry_points
 
 log = logging.getLogger(__name__)
+lock = RLock()
 EXTENSIONS = {}
 
 
 def get_entry_points(section):
     """Load all Python classes registered at a given entry point."""
-    if section not in EXTENSIONS:
-        EXTENSIONS[section] = {}
-    if not EXTENSIONS[section]:
-        for ep in iter_entry_points(section):
-            try:
-                EXTENSIONS[section][ep.name] = ep.load()
-            except Exception:
-                log.exception("Error loading: %s", ep.name)
-    return EXTENSIONS[section]
+    with lock:
+        if section not in EXTENSIONS:
+            EXTENSIONS[section] = {}
+            for ep in iter_entry_points(section):
+                try:
+                    EXTENSIONS[section][ep.name] = ep.load()
+                except Exception:
+                    log.exception("Error loading: %s", ep.name)
+        return EXTENSIONS[section]
 
 
 def get_entry_point(section, name):
