@@ -17,7 +17,7 @@ class Archive(object):
         pass
 
     @abc.abstractmethod
-    def archive_file(self, file_path, content_hash=None):
+    def archive_file(self, file_path, content_hash=None, mime_type=None):
         """Import the given file into the archive."""
         pass
 

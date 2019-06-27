@@ -1,10 +1,10 @@
-import os
 import shutil
 import logging
+from pathlib import Path
 from normality import safe_filename
 
 from servicelayer.archive.archive import Archive
-from servicelayer.archive.util import checksum, decode_path, BUF_SIZE
+from servicelayer.archive.util import checksum, BUF_SIZE
 
 log = logging.getLogger(__name__)
 
@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 class FileArchive(Archive):
 
     def __init__(self, path=None):
-        self.path = decode_path(path)
+        self.path = Path(path)
         if self.path is None:
             raise ValueError('No archive path is set.')
         log.info("Archive: %s", self.path)
@@ -21,17 +21,14 @@ class FileArchive(Archive):
         prefix = self._get_prefix(content_hash)
         if prefix is None:
             return
-        path = os.path.join(self.path, prefix)
-        data_path = os.path.join(path, 'data')
-        if os.path.exists(data_path):
-            return data_path
+        path = self.path.joinpath(prefix)
         try:
-            for file_name in os.listdir(path):
-                return os.path.join(path, file_name)
-        except OSError:
+            for file_name in path.iterdir():
+                return file_name.resolve()
+        except FileNotFoundError:
             return
 
-    def archive_file(self, file_path, content_hash=None):
+    def archive_file(self, file_path, content_hash=None, mime_type=None):
         """Import the given file into the archive."""
         if content_hash is None:
             content_hash = checksum(file_path)
@@ -40,14 +37,10 @@ class FileArchive(Archive):
             return content_hash
 
         archive_prefix = self._get_prefix(content_hash)
-        archive_path = os.path.join(self.path, archive_prefix)
-        try:
-            os.makedirs(archive_path)
-        except Exception:
-            return content_hash
-
+        archive_path = self.path.joinpath(archive_prefix)
+        archive_path.mkdir(parents=True, exist_ok=True)
         file_name = safe_filename(file_path, default='data')
-        archive_path = os.path.join(archive_path, file_name)
+        archive_path = archive_path.joinpath(file_name)
         with open(file_path, 'rb') as fin:
             with open(archive_path, 'wb') as fout:
                 shutil.copyfileobj(fin, fout, BUF_SIZE)

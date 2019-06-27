@@ -1,8 +1,8 @@
-import os
 import shutil
 import logging
 import tempfile
 import threading
+from pathlib import Path
 from normality import safe_filename
 
 from servicelayer.archive.archive import Archive
@@ -23,17 +23,12 @@ class VirtualArchive(Archive):
             if not hasattr(self.local, 'dir'):
                 self.local.dir = tempfile.mkdtemp(prefix=self.base_name)
             temp_path = self.local.dir
-        path_name = '%s.storagelayer' % content_hash
-        return os.path.join(temp_path, path_name)
+        return Path(temp_path).joinpath('%s.sl' % content_hash)
 
     def _local_path(self, content_hash, file_name, temp_path):
         path = self._get_local_prefix(content_hash, temp_path=temp_path)
-        try:
-            os.makedirs(path)
-        except Exception:
-            pass
-        file_name = safe_filename(file_name, default='data')
-        return os.path.join(path, file_name)
+        path.mkdir(parents=True, exist_ok=True)
+        return path.joinpath(safe_filename(file_name, default='data'))
 
     def cleanup_file(self, content_hash, temp_path=None):
         """Delete the local cached version of the file."""

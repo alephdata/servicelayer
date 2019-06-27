@@ -1,6 +1,6 @@
-import os
 import boto3
 import logging
+from pathlib import Path
 from botocore.exceptions import ClientError
 
 from servicelayer import settings
@@ -60,23 +60,30 @@ class S3Archive(VirtualArchive):
         prefix = self._get_prefix(content_hash)
         if prefix is None:
             return
-        # obj = self.client.Object(self.bucket, os.path.join(prefix, 'data'))
         res = self.client.list_objects(MaxKeys=1,
                                        Bucket=self.bucket,
                                        Prefix=prefix)
         for obj in res.get('Contents', []):
             return obj.get('Key')
 
-    def archive_file(self, file_path, content_hash=None):
+    def archive_file(self, file_path, content_hash=None, mime_type=None):
         """Store the file located at the given path on S3, based on a path
         made up from its SHA1 content hash."""
+        file_path = Path(file_path)
         if content_hash is None:
             content_hash = checksum(file_path)
 
         obj = self._locate_key(content_hash)
-        if obj is None:
-            path = os.path.join(self._get_prefix(content_hash), 'data')
-            self.client.upload_file(file_path, self.bucket, path)
+        if obj is not None:
+            return content_hash
+
+        path = Path(self._get_prefix(content_hash)).joinpath('data')
+        extra = {}
+        if mime_type is not None:
+            extra['ContentType'] = mime_type
+        with open(file_path, 'rb') as fh:
+            self.client.upload_fileobj(fh, self.bucket, str(path),
+                                       ExtraArgs=extra)
         return content_hash
 
     def load_file(self, content_hash, file_name=None, temp_path=None):
@@ -85,7 +92,7 @@ class S3Archive(VirtualArchive):
         key = self._locate_key(content_hash)
         if key is not None:
             path = self._local_path(content_hash, file_name, temp_path)
-            self.client.download_file(self.bucket, key, path)
+            self.client.download_file(self.bucket, key, str(path))
             return path
 
     def generate_url(self, content_hash, file_name=None, mime_type=None):

@@ -1,6 +1,7 @@
 import os
 import shutil
 import tempfile
+from pathlib import Path
 from unittest import TestCase
 
 from servicelayer.archive import init_archive
@@ -10,12 +11,13 @@ from servicelayer.archive.util import checksum
 class FileArchiveTest(TestCase):
 
     def setUp(self):
-        self.path = os.path.join(tempfile.gettempdir(), 'storagelayer_test')
+        tempdir = Path(tempfile.gettempdir())
+        self.path = tempdir.joinpath('sltest').resolve()
         self.archive = init_archive('file', path=self.path)
-        self.file = os.path.abspath(__file__)
+        self.file = Path(__file__).resolve(0)
 
     def tearDown(self):
-        if os.path.exists(self.path):
+        if self.path.exists():
             shutil.rmtree(self.path)
 
     def test_basic_archive(self):
@@ -40,11 +42,11 @@ class FileArchiveTest(TestCase):
         out = self.archive.archive_file(self.file)
         path = self.archive.load_file(out)
         assert path is not None, path
-        assert path.startswith(self.path)
-        assert os.path.isfile(path), path
+        assert self.path in path.parents
+        assert path.is_file(), path
 
     def test_cleanup_file(self):
         out = self.archive.archive_file(self.file)
         self.archive.cleanup_file(out)
         path = self.archive.load_file(out)
-        assert os.path.isfile(path), path
+        assert path.is_file(), path

@@ -1,5 +1,6 @@
 import os
 import logging
+from pathlib import Path
 from datetime import datetime, timedelta
 from google.cloud.storage import Blob
 from google.cloud.storage.client import Client
@@ -53,21 +54,25 @@ class GoogleStorageArchive(VirtualArchive):
         for blob in self.bucket.list_blobs(max_results=1, prefix=prefix):
             return blob
 
-    def archive_file(self, file_path, content_hash=None):
-        """Store the file located at the given path on S3, based on a path
+    def archive_file(self, file_path, content_hash=None, mime_type=None):
+        """Store the file located at the given path on Google, based on a path
         made up from its SHA1 content hash."""
+        file_path = Path(file_path)
         if content_hash is None:
             content_hash = checksum(file_path)
 
         blob = self._locate_blob(content_hash)
-        if blob is None:
-            path = os.path.join(self._get_prefix(content_hash), 'data')
-            blob = Blob(path, self.bucket)
-            blob.upload_from_filename(file_path)
+        if blob is not None:
+            return content_hash
+
+        path = os.path.join(self._get_prefix(content_hash), 'data')
+        blob = Blob(path, self.bucket)
+        with open(file_path, 'rb') as fh:
+            blob.upload_from_file(fh, content_type=mime_type)
         return content_hash
 
     def load_file(self, content_hash, file_name=None, temp_path=None):
-        """Retrieve a file from S3 storage and put it onto the local file
+        """Retrieve a file from Google storage and put it onto the local file
         system for further processing."""
         blob = self._locate_blob(content_hash)
         if blob is not None:
