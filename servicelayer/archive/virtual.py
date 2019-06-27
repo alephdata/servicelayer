@@ -2,10 +2,10 @@ import shutil
 import logging
 import tempfile
 import threading
-from pathlib import Path
 from normality import safe_filename
 
 from servicelayer.archive.archive import Archive
+from servicelayer.archive.util import ensure_path
 
 log = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class VirtualArchive(Archive):
             if not hasattr(self.local, 'dir'):
                 self.local.dir = tempfile.mkdtemp(prefix=self.base_name)
             temp_path = self.local.dir
-        return Path(temp_path).joinpath('%s.sl' % content_hash)
+        return ensure_path(temp_path).joinpath('%s.sl' % content_hash)
 
     def _local_path(self, content_hash, file_name, temp_path):
         path = self._get_local_prefix(content_hash, temp_path=temp_path)

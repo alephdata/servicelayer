@@ -1,20 +1,18 @@
-import os
 import shutil
 import tempfile
-from pathlib import Path
 from unittest import TestCase
 
 from servicelayer.archive import init_archive
-from servicelayer.archive.util import checksum
+from servicelayer.archive.util import checksum, ensure_path
 
 
 class FileArchiveTest(TestCase):
 
     def setUp(self):
-        tempdir = Path(tempfile.gettempdir())
-        self.path = tempdir.joinpath('sltest').resolve()
+        tempdir = ensure_path(tempfile.gettempdir())
+        self.path = tempdir.joinpath('sltest')
         self.archive = init_archive('file', path=self.path)
-        self.file = Path(__file__).resolve(0)
+        self.file = ensure_path(__file__)
 
     def tearDown(self):
         if self.path.exists():

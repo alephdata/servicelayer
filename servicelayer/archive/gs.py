@@ -1,12 +1,11 @@
 import os
 import logging
-from pathlib import Path
 from datetime import datetime, timedelta
 from google.cloud.storage import Blob
 from google.cloud.storage.client import Client
 
 from servicelayer.archive.virtual import VirtualArchive
-from servicelayer.archive.util import checksum
+from servicelayer.archive.util import checksum, ensure_path
 
 log = logging.getLogger(__name__)
 
@@ -57,9 +56,12 @@ class GoogleStorageArchive(VirtualArchive):
     def archive_file(self, file_path, content_hash=None, mime_type=None):
         """Store the file located at the given path on Google, based on a path
         made up from its SHA1 content hash."""
-        file_path = Path(file_path)
+        file_path = ensure_path(file_path)
         if content_hash is None:
             content_hash = checksum(file_path)
+
+        if content_hash is None:
+            return
 
         blob = self._locate_blob(content_hash)
         if blob is not None:

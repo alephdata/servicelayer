@@ -1,10 +1,9 @@
 import shutil
 import logging
-from pathlib import Path
 from normality import safe_filename
 
 from servicelayer.archive.archive import Archive
-from servicelayer.archive.util import checksum, BUF_SIZE
+from servicelayer.archive.util import ensure_path, checksum, BUF_SIZE
 
 log = logging.getLogger(__name__)
 
@@ -12,7 +11,7 @@ log = logging.getLogger(__name__)
 class FileArchive(Archive):
 
     def __init__(self, path=None):
-        self.path = Path(path)
+        self.path = ensure_path(path)
         if self.path is None:
             raise ValueError('No archive path is set.')
         log.info("Archive: %s", self.path)
@@ -32,6 +31,9 @@ class FileArchive(Archive):
         """Import the given file into the archive."""
         if content_hash is None:
             content_hash = checksum(file_path)
+
+        if content_hash is None:
+            return
 
         if self._locate_key(content_hash):
             return content_hash

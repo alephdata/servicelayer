@@ -1,10 +1,9 @@
-import os
 from unittest import TestCase
 
 from moto import mock_s3
 
 from servicelayer.archive import init_archive
-from servicelayer.archive.util import checksum
+from servicelayer.archive.util import checksum, ensure_path
 
 
 class FileArchiveTest(TestCase):
@@ -13,7 +12,7 @@ class FileArchiveTest(TestCase):
         self.mock = mock_s3()
         self.mock.start()
         self.archive = init_archive('s3', bucket='foo')
-        self.file = os.path.abspath(__file__)
+        self.file = ensure_path(__file__)
 
     def tearDown(self):
         self.mock.stop()
@@ -41,12 +40,12 @@ class FileArchiveTest(TestCase):
         out = self.archive.archive_file(self.file)
         path = self.archive.load_file(out)
         assert path is not None, path
-        assert os.path.isfile(path), path
+        assert path.is_file(), path
 
     def test_cleanup_file(self):
         out = self.archive.archive_file(self.file)
         self.archive.cleanup_file(out)
         path = self.archive.load_file(out)
-        assert os.path.isfile(path), path
+        assert path.is_file(), path
         self.archive.cleanup_file(out)
-        assert not os.path.isfile(path), path
+        assert not path.exists(), path

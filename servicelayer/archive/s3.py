@@ -1,11 +1,10 @@
 import boto3
 import logging
-from pathlib import Path
 from botocore.exceptions import ClientError
 
 from servicelayer import settings
 from servicelayer.archive.virtual import VirtualArchive
-from servicelayer.archive.util import checksum
+from servicelayer.archive.util import checksum, ensure_path
 
 log = logging.getLogger(__name__)
 
@@ -69,15 +68,18 @@ class S3Archive(VirtualArchive):
     def archive_file(self, file_path, content_hash=None, mime_type=None):
         """Store the file located at the given path on S3, based on a path
         made up from its SHA1 content hash."""
-        file_path = Path(file_path)
+        file_path = ensure_path(file_path)
         if content_hash is None:
             content_hash = checksum(file_path)
+
+        # if content_hash is None:
+        #     return
 
         obj = self._locate_key(content_hash)
         if obj is not None:
             return content_hash
 
-        path = Path(self._get_prefix(content_hash)).joinpath('data')
+        path = '{}/data'.format(self._get_prefix(content_hash))
         extra = {}
         if mime_type is not None:
             extra['ContentType'] = mime_type
