@@ -26,15 +26,22 @@ class GoogleStorageArchive(VirtualArchive):
             self.upgrade()
 
     def upgrade(self):
+        # 'Accept-Ranges',
+        # 'Content-Encoding',
+        # 'Content-Length',
+        # 'Content-Range',
+        # 'Cache-Control',
+        # 'Content-Language',
+        # 'Content-Type',
+        # 'Expires',
+        # 'Last-Modified',
+        # 'Pragma',
+        # 'Range',
+        # 'Date',
         policy = {
             "origin": ['*'],
-            "method": ['GET'],
-            "responseHeader": [
-                'Accept-Ranges',
-                'Content-Encoding',
-                'Content-Length',
-                'Content-Range'
-            ],
+            "method": ['GET', 'HEAD', 'OPTIONS'],
+            "responseHeader": ['*'],
             "maxAgeSeconds": self.TIMEOUT
         }
         self.bucket.cors = [policy]
