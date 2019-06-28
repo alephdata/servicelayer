@@ -1,7 +1,11 @@
+import logging
 from fakeredis import FakeRedis
-from redis import ConnectionPool, Redis
+from redis import ConnectionPool, Redis, BusyLoadingError
 
 from servicelayer import settings
+from servicelayer.util import service_retries, backoff
+
+log = logging.getLogger(__name__)
 
 
 def get_fakeredis():
@@ -21,7 +25,21 @@ def get_redis():
     """Create a redis connection."""
     if settings.REDIS_URL is None:
         return get_fakeredis()
-    return Redis(connection_pool=get_redis_pool(), decode_responses=True)
+    conn = Redis(connection_pool=get_redis_pool(), decode_responses=True)
+    wait_for_redis(conn)
+    return conn
+
+
+def wait_for_redis(conn):
+    """Wait for redis to load its data into memory on initial system
+    bootup."""
+    for attempt in service_retries():
+        try:
+            conn.get('test_redis_ready')
+        except BusyLoadingError:
+            log.info("Waiting for redis to load...")
+            backoff(failures=attempt)
+    raise RuntimeError("Redis is not ready.")
 
 
 def make_key(*criteria):
