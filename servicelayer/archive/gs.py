@@ -3,9 +3,11 @@ import logging
 from datetime import datetime, timedelta
 from google.cloud.storage import Blob
 from google.cloud.storage.client import Client
+from google.api_core.exceptions import TooManyRequests
 
 from servicelayer.archive.virtual import VirtualArchive
 from servicelayer.archive.util import checksum, ensure_path
+from servicelayer.util import service_retries, backoff
 
 log = logging.getLogger(__name__)
 
@@ -21,7 +23,9 @@ class GoogleStorageArchive(VirtualArchive):
         self.bucket = self.client.lookup_bucket(bucket)
         if self.bucket is None:
             self.bucket = self.client.create_bucket(bucket)
+            self.upgrade()
 
+    def upgrade(self):
         policy = {
             "origin": ['*'],
             "method": ['GET'],
@@ -67,11 +71,16 @@ class GoogleStorageArchive(VirtualArchive):
         if blob is not None:
             return content_hash
 
-        path = os.path.join(self._get_prefix(content_hash), 'data')
-        blob = Blob(path, self.bucket)
-        with open(file_path, 'rb') as fh:
-            blob.upload_from_file(fh, content_type=mime_type)
-        return content_hash
+        for attempt in service_retries():
+            try:
+                path = os.path.join(self._get_prefix(content_hash), 'data')
+                blob = Blob(path, self.bucket)
+                with open(file_path, 'rb') as fh:
+                    blob.upload_from_file(fh, content_type=mime_type)
+                return content_hash
+            except TooManyRequests as tmr:
+                log.error("GS error: %s", tmr)
+                backoff(failures=attempt)
 
     def load_file(self, content_hash, file_name=None, temp_path=None):
         """Retrieve a file from Google storage and put it onto the local file

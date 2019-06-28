@@ -30,9 +30,11 @@ class S3Archive(VirtualArchive):
             error_code = int(e.response['Error']['Code'])
             if error_code == 404:
                 self.client.create_bucket(Bucket=bucket)
+                self.upgrade()
             else:
                 log.exception("Could not check bucket")
 
+    def upgrade(self):
         # Make sure bucket policy is set correctly.
         config = {
             'CORSRules': [
@@ -47,7 +49,7 @@ class S3Archive(VirtualArchive):
             ]
         }
         try:
-            self.client.put_bucket_cors(Bucket=bucket,
+            self.client.put_bucket_cors(Bucket=self.bucket,
                                         CORSConfiguration=config)
         except ClientError:
             log.exception("Could not update CORS")
