@@ -36,6 +36,7 @@ def wait_for_redis(conn):
     for attempt in service_retries():
         try:
             conn.get('test_redis_ready')
+            return conn
         except BusyLoadingError:
             log.info("Waiting for redis to load...")
             backoff(failures=attempt)
