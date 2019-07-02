@@ -3,13 +3,15 @@ import logging
 from datetime import datetime, timedelta
 from google.cloud.storage import Blob
 from google.cloud.storage.client import Client
-from google.api_core.exceptions import TooManyRequests
+from google.api_core.exceptions import TooManyRequests, InternalServerError
+from google.api_core.exceptions import ServiceUnavailable
 
 from servicelayer.archive.virtual import VirtualArchive
 from servicelayer.archive.util import checksum, ensure_path
 from servicelayer.util import service_retries, backoff
 
 log = logging.getLogger(__name__)
+FAILURES = (TooManyRequests, InternalServerError, ServiceUnavailable,)
 
 
 class GoogleStorageArchive(VirtualArchive):
@@ -85,8 +87,8 @@ class GoogleStorageArchive(VirtualArchive):
                 with open(file_path, 'rb') as fh:
                     blob.upload_from_file(fh, content_type=mime_type)
                 return content_hash
-            except TooManyRequests as tmr:
-                log.error("GS error: %s", tmr)
+            except FAILURES as exc:
+                log.error("GS error: %s", exc)
                 backoff(failures=attempt)
 
     def load_file(self, content_hash, file_name=None, temp_path=None):
