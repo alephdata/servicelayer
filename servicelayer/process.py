@@ -7,6 +7,7 @@ from redis.exceptions import BusyLoadingError
 
 from servicelayer.settings import REDIS_LONG
 from servicelayer.cache import make_key
+from servicelayer.util import pack_now
 
 log = logging.getLogger(__name__)
 PREFIX = 'sla'
@@ -22,13 +23,14 @@ class ServiceQueue(object):
     PRIO_LOW = 1
     PRIORITIES = [PRIO_HIGH, PRIO_MEDIUM, PRIO_LOW]
 
-    def __init__(self, conn, operation, dataset, priority=PRIO_MEDIUM):
+    def __init__(self, conn, operation, job, dataset, priority=PRIO_MEDIUM):
         self.conn = conn
         self.operation = operation
+        self.job = job
         self.dataset = dataset
         self.priority = priority
-        self.progress = Progress(conn, operation, dataset)
-        self.queue_key = make_key(PREFIX, 'q', operation, dataset)
+        self.progress = Progress(conn, operation, job, dataset)
+        self.queue_key = make_key(PREFIX, 'q', operation, job, dataset)
         self.ops_queue_key = make_key(PREFIX, 'qo', operation, priority)
 
     def queue_task(self, payload, context):
@@ -37,6 +39,7 @@ class ServiceQueue(object):
             'context': context or {},
             'payload': payload,
             'dataset': self.dataset,
+            'job': self.job,
             'operation': self.operation,
             'priority': self.priority
         })
@@ -51,7 +54,7 @@ class ServiceQueue(object):
         return status.get('pending') < 1
 
     def remove(self):
-        self.conn.sadd(self.ops_queue_key, self.queue_key)
+        self.conn.srem(self.ops_queue_key, self.queue_key)
         self.conn.delete(self.queue_key)
         self.progress.remove()
 
@@ -96,9 +99,10 @@ class ServiceQueue(object):
 
             task = json.loads(task_data)
             operation = task.get('operation')
+            job = task.get('job')
             dataset = task.get('dataset')
             priority = task.get('priority')
-            queue = cls(conn, operation, dataset, priority=priority)
+            queue = cls(conn, operation, job, dataset, priority=priority)
             return (queue, task.get('payload'), task.get('context'))
         except BusyLoadingError:
             time.sleep(timeout + 1)
@@ -108,9 +112,10 @@ class ServiceQueue(object):
     def remove_dataset(cls, conn, dataset):
         """Delete all known queues associated with a dataset."""
         for operation in Progress.get_dataset_operations(conn, dataset):
-            for priority in cls.PRIORITIES:
-                queue = cls(conn, operation, dataset, priority=priority)
-                queue.remove()
+            for job in Progress.get_dataset_jobs(conn, dataset):
+                for priority in cls.PRIORITIES:
+                    queue = cls(conn, operation, job, dataset, priority=priority)  # noqa
+                    queue.remove()
 
 
 class Progress(object):
@@ -121,19 +126,23 @@ class Progress(object):
     FINISHED = 'finished'
     # TODO: do we need a 'running' state?
 
-    def __init__(self, conn, operation, dataset):
-        _key = make_key(PREFIX, 'p', operation, dataset)
+    def __init__(self, conn, operation, job, dataset):
+        _key = make_key(PREFIX, 'p', operation, job, dataset)
         self.conn = conn
         self.operation = operation
+        self.job = job
         self.dataset = dataset
         self.dataset_key = make_key(PREFIX, 'qd', dataset)
+        self.dataset_jobs_key = make_key(PREFIX, 'qdj', dataset)
         self.pending_key = make_key(_key, self.PENDING)
         self.finished_key = make_key(_key, self.FINISHED)
 
     def mark_active(self):
-        """Add the dataset to the list of datasets that are
-        running."""
+        """Add the dataset to the list of datasets that are running. Add the
+        job and it's start time if it doesn't exist already."""
         self.conn.sadd(self.dataset_key, self.operation)
+        if not self.conn.hget(self.dataset_jobs_key, self.job):
+            self.conn.hset(self.dataset_jobs_key, self.job, pack_now())
 
     def mark_pending(self, amount=1):
         self.mark_active()
@@ -153,6 +162,7 @@ class Progress(object):
     def remove(self):
         self.conn.srem(self.dataset_key, self.operation)
         self.conn.expire(self.dataset_key, REDIS_LONG)
+        self.conn.hdel(self.dataset_jobs_key, self.job)
         self.conn.delete(self.pending_key, self.finished_key)
 
     def get(self):
@@ -160,6 +170,7 @@ class Progress(object):
         keys = (self.pending_key, self.finished_key)
         pending, finished = self.conn.mget(keys)
         return {
+            'job': self.job,
             'operation': self.operation,
             'pending': max(0, int(pending or 0)),
             'finished': max(0, int(finished or 0)),
@@ -170,12 +181,28 @@ class Progress(object):
         return conn.smembers(make_key(PREFIX, 'qd', dataset))
 
     @classmethod
+    def get_dataset_jobs(cls, conn, dataset):
+        return conn.hkeys(make_key(PREFIX, 'qdj', dataset))
+
+    @classmethod
+    def get_job_status(cls, conn, dataset, job):
+        """Aggregate status for all operations on the given job."""
+        status = {'finished': 0, 'pending': 0, 'operations': []}
+        status['start_time'] = conn.hget(make_key(PREFIX, 'qdj', dataset), job)
+        for operation in cls.get_dataset_operations(conn, dataset):
+            progress = cls(conn, operation, job, dataset).get()
+            status['operations'].append(progress)
+            status['finished'] += progress['finished']
+            status['pending'] += progress['pending']
+        return status
+
+    @classmethod
     def get_dataset_status(cls, conn, dataset):
         """Aggregate status for all operations on the given dataset."""
-        status = {'finished': 0, 'pending': 0, 'operations': []}
-        for operation in cls.get_dataset_operations(conn, dataset):
-            progress = cls(conn, operation, dataset).get()
-            status['operations'].append(progress)
+        status = {'finished': 0, 'pending': 0, 'jobs': []}
+        for job in cls.get_dataset_jobs(conn, dataset):
+            progress = cls.get_job_status(conn, dataset, job)
+            status['jobs'].append(progress)
             status['finished'] += progress['finished']
             status['pending'] += progress['pending']
         return status

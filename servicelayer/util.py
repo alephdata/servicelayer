@@ -1,6 +1,7 @@
 import time
 import random
 import logging
+from datetime import datetime
 
 log = logging.getLogger(__name__)
 
@@ -15,3 +16,19 @@ def backoff(failures=0):
 def service_retries():
     """A default number of tries to re-try an external service."""
     return range(30)
+
+
+def pack_datetime(value):
+    if value is not None:
+        return str(value)
+
+
+def pack_now():
+    return pack_datetime(datetime.utcnow())
+
+
+def unpack_datetime(value, default=None):
+    try:
+        return datetime.strptime(value, "%Y-%m-%d %H:%M:%S.%f")
+    except Exception:
+        return default
