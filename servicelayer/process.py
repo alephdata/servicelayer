@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 PREFIX = 'sla'
 
 
-class ServiceQueue(object):
+class Job(object):
     OP_INGEST = 'ingest'
     OP_INDEX = 'index'
     OP_ANALYSIS = 'analysis'
@@ -23,14 +23,14 @@ class ServiceQueue(object):
     PRIO_LOW = 1
     PRIORITIES = [PRIO_HIGH, PRIO_MEDIUM, PRIO_LOW]
 
-    def __init__(self, conn, operation, job, dataset, priority=PRIO_MEDIUM):
+    def __init__(self, conn, operation, job_id, dataset, priority=PRIO_MEDIUM):
         self.conn = conn
         self.operation = operation
-        self.job = job
+        self.job_id = job_id
         self.dataset = dataset
         self.priority = priority
-        self.progress = Progress(conn, operation, job, dataset)
-        self.queue_key = make_key(PREFIX, 'q', operation, job, dataset)
+        self.progress = Progress(conn, operation, job_id, dataset)
+        self.queue_key = make_key(PREFIX, 'q', operation, job_id, dataset)
         self.ops_queue_key = make_key(PREFIX, 'qo', operation, priority)
 
     def queue_task(self, payload, context):
@@ -39,7 +39,7 @@ class ServiceQueue(object):
             'context': context or {},
             'payload': payload,
             'dataset': self.dataset,
-            'job': self.job,
+            'job_id': self.job_id,
             'operation': self.operation,
             'priority': self.priority
         })
@@ -50,13 +50,29 @@ class ServiceQueue(object):
         self.progress.mark_finished()
 
     def is_done(self):
+        """Are the tasks for the current `job_id` and `operation` done?"""
         status = self.progress.get()
         return status.get('pending') < 1
 
     def remove(self):
+        """Remove tasks for the current `job_id` and `operation`"""
         self.conn.srem(self.ops_queue_key, self.queue_key)
         self.conn.delete(self.queue_key)
         self.progress.remove()
+
+    @classmethod
+    def is_job_done_all_ops(cls, conn, dataset, job_id):
+        """Are all the tasks for `job_id` done?"""
+        status = Progress.get_job_status(conn, dataset, job_id)
+        return status['pending'] < 1
+
+    @classmethod
+    def remove_job_all_ops(cls, conn, dataset, job_id):
+        """Remove all tasks for `job_id`"""
+        for operation in Progress.get_dataset_operations(conn.dataset):
+            for priority in cls.PRIORITIES:
+                job = cls(conn, operation, job_id, dataset, priority=priority)
+                job.remove()
 
     @classmethod
     def _get_operation_queues(cls, conn, operations):
@@ -99,11 +115,11 @@ class ServiceQueue(object):
 
             task = json.loads(task_data)
             operation = task.get('operation')
-            job = task.get('job')
+            job_id = task.get('job_id')
             dataset = task.get('dataset')
             priority = task.get('priority')
-            queue = cls(conn, operation, job, dataset, priority=priority)
-            return (queue, task.get('payload'), task.get('context'))
+            job = cls(conn, operation, job_id, dataset, priority=priority)
+            return (job, task.get('payload'), task.get('context'))
         except BusyLoadingError:
             time.sleep(timeout + 1)
             return (None, None, None)
@@ -112,10 +128,10 @@ class ServiceQueue(object):
     def remove_dataset(cls, conn, dataset):
         """Delete all known queues associated with a dataset."""
         for operation in Progress.get_dataset_operations(conn, dataset):
-            for job in Progress.get_dataset_jobs(conn, dataset):
+            for job_id in Progress.get_dataset_job_ids(conn, dataset):
                 for priority in cls.PRIORITIES:
-                    queue = cls(conn, operation, job, dataset, priority=priority)  # noqa
-                    queue.remove()
+                    job = cls(conn, operation, job_id, dataset, priority=priority)  # noqa
+                    job.remove()
 
 
 class Progress(object):
@@ -126,11 +142,11 @@ class Progress(object):
     FINISHED = 'finished'
     # TODO: do we need a 'running' state?
 
-    def __init__(self, conn, operation, job, dataset):
-        _key = make_key(PREFIX, 'p', operation, job, dataset)
+    def __init__(self, conn, operation, job_id, dataset):
+        _key = make_key(PREFIX, 'p', operation, job_id, dataset)
         self.conn = conn
         self.operation = operation
-        self.job = job
+        self.job_id = job_id
         self.dataset = dataset
         self.dataset_key = make_key(PREFIX, 'qd', dataset)
         self.dataset_jobs_key = make_key(PREFIX, 'qdj', dataset)
@@ -141,8 +157,8 @@ class Progress(object):
         """Add the dataset to the list of datasets that are running. Add the
         job and it's start time if it doesn't exist already."""
         self.conn.sadd(self.dataset_key, self.operation)
-        if not self.conn.hget(self.dataset_jobs_key, self.job):
-            self.conn.hset(self.dataset_jobs_key, self.job, pack_now())
+        if not self.conn.hget(self.dataset_jobs_key, self.job_id):
+            self.conn.hset(self.dataset_jobs_key, self.job_id, pack_now())
 
     def mark_pending(self, amount=1):
         self.mark_active()
@@ -162,7 +178,7 @@ class Progress(object):
     def remove(self):
         self.conn.srem(self.dataset_key, self.operation)
         self.conn.expire(self.dataset_key, REDIS_LONG)
-        self.conn.hdel(self.dataset_jobs_key, self.job)
+        self.conn.hdel(self.dataset_jobs_key, self.job_id)
         self.conn.delete(self.pending_key, self.finished_key)
 
     def get(self):
@@ -170,7 +186,7 @@ class Progress(object):
         keys = (self.pending_key, self.finished_key)
         pending, finished = self.conn.mget(keys)
         return {
-            'job': self.job,
+            'job_id': self.job_id,
             'operation': self.operation,
             'pending': max(0, int(pending or 0)),
             'finished': max(0, int(finished or 0)),
@@ -181,16 +197,16 @@ class Progress(object):
         return conn.smembers(make_key(PREFIX, 'qd', dataset))
 
     @classmethod
-    def get_dataset_jobs(cls, conn, dataset):
+    def get_dataset_job_ids(cls, conn, dataset):
         return conn.hkeys(make_key(PREFIX, 'qdj', dataset))
 
     @classmethod
-    def get_job_status(cls, conn, dataset, job):
+    def get_job_status(cls, conn, dataset, job_id):
         """Aggregate status for all operations on the given job."""
         status = {'finished': 0, 'pending': 0, 'operations': []}
-        status['start_time'] = conn.hget(make_key(PREFIX, 'qdj', dataset), job)
+        status['start_time'] = conn.hget(make_key(PREFIX, 'qdj', dataset), job_id)  # noqa
         for operation in cls.get_dataset_operations(conn, dataset):
-            progress = cls(conn, operation, job, dataset).get()
+            progress = cls(conn, operation, job_id, dataset).get()
             status['operations'].append(progress)
             status['finished'] += progress['finished']
             status['pending'] += progress['pending']
@@ -200,8 +216,8 @@ class Progress(object):
     def get_dataset_status(cls, conn, dataset):
         """Aggregate status for all operations on the given dataset."""
         status = {'finished': 0, 'pending': 0, 'jobs': []}
-        for job in cls.get_dataset_jobs(conn, dataset):
-            progress = cls.get_job_status(conn, dataset, job)
+        for job_id in cls.get_dataset_job_ids(conn, dataset):
+            progress = cls.get_job_status(conn, dataset, job_id)
             status['jobs'].append(progress)
             status['finished'] += progress['finished']
             status['pending'] += progress['pending']
