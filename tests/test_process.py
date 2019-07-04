@@ -9,7 +9,8 @@ class ProcessTest(TestCase):
     def test_service_queue(self):
         conn = get_fakeredis()
         ds = 'test_1'
-        queue = ServiceQueue(conn, ServiceQueue.OP_INGEST, ds)
+        job = 'job_1'
+        queue = ServiceQueue(conn, ServiceQueue.OP_INGEST, job, ds)
         status = queue.progress.get()
         assert status['pending'] == 0
         assert status['finished'] == 0
@@ -43,7 +44,8 @@ class ProcessTest(TestCase):
     def test_queue_clear(self):
         conn = get_fakeredis()
         ds = 'test_1'
-        queue = ServiceQueue(conn, ServiceQueue.OP_INGEST, ds)
+        job = 'job_1'
+        queue = ServiceQueue(conn, ServiceQueue.OP_INGEST, job, ds)
         queue.queue_task({'test': 'foo'}, {})
         status = queue.progress.get()
         assert status['pending'] == 1
@@ -54,7 +56,8 @@ class ProcessTest(TestCase):
     def test_progress(self):
         conn = get_fakeredis()
         ds = 'test_2'
-        progress = Progress(conn, ServiceQueue.OP_INGEST, ds)
+        job = 'job_2'
+        progress = Progress(conn, ServiceQueue.OP_INGEST, job, ds)
         status = progress.get()
         assert status['pending'] == 0
         assert status['finished'] == 0
@@ -64,10 +67,15 @@ class ProcessTest(TestCase):
         assert status['finished'] == 0
         full = Progress.get_dataset_status(conn, ds)
         assert full['pending'] == 1
+        job_status = Progress.get_job_status(conn, ds, job)
+        assert job_status['pending'] == 1
         progress.mark_finished()
         status = progress.get()
         assert status['pending'] == 0
         assert status['finished'] == 1
+        job_status = Progress.get_job_status(conn, ds, job)
+        assert job_status['pending'] == 0
+        assert job_status['finished'] == 1
         progress.remove()
         status = progress.get()
         assert status['finished'] == 0
