@@ -1,19 +1,50 @@
-import json
 import time
 import random
 import logging
+import uuid
 from banal import ensure_list
 from redis.exceptions import BusyLoadingError
 
 from servicelayer.settings import REDIS_LONG
 from servicelayer.cache import make_key
-from servicelayer.util import pack_now
+from servicelayer.util import pack_now, dump_json, load_json
 
 log = logging.getLogger(__name__)
 PREFIX = 'sla'
 
 
 class Job(object):
+    def __init__(self, conn, dataset, job_id):
+        self.conn = conn
+        self.dataset = dataset
+        self.id = job_id
+
+    @classmethod
+    def random_id(cls):
+        return uuid.uuid4().hex
+
+    def is_done(self):
+        status = Progress.get_job_status(self.conn, self.dataset, self.id)
+        return status['pending'] < 1
+
+    def remove(self):
+        for operation in Progress.get_dataset_operations(self.conn, self.dataset):  # noqa
+            for priority in JobOp.PRIORITIES:
+                job_op = JobOp(
+                    self.conn, operation, self.id,
+                    self.dataset, priority=priority
+                )
+                job_op.remove()
+
+    @classmethod
+    def remove_dataset(cls, conn, dataset):
+        """Delete all known queues associated with a dataset."""
+        for job_id in Progress.get_dataset_job_ids(conn, dataset):
+            job = cls(conn, dataset, job_id)
+            job.remove()
+
+
+class JobOp(object):
     OP_INGEST = 'ingest'
     OP_INDEX = 'index'
     OP_ANALYSIS = 'analysis'
@@ -23,23 +54,23 @@ class Job(object):
     PRIO_LOW = 1
     PRIORITIES = [PRIO_HIGH, PRIO_MEDIUM, PRIO_LOW]
 
-    def __init__(self, conn, operation, job_id, dataset, priority=PRIO_MEDIUM):
+    def __init__(self, conn, operation, job_id, dataset, priority=PRIO_MEDIUM):  # noqa
         self.conn = conn
         self.operation = operation
-        self.job_id = job_id
+        self.job = Job(conn, dataset, job_id)
         self.dataset = dataset
         self.priority = priority
-        self.progress = Progress(conn, operation, job_id, dataset)
-        self.queue_key = make_key(PREFIX, 'q', operation, job_id, dataset)
+        self.progress = Progress(conn, operation, self.job.id, dataset)
+        self.queue_key = make_key(PREFIX, 'q', operation, self.job.id, dataset)
         self.ops_queue_key = make_key(PREFIX, 'qo', operation, priority)
 
     def queue_task(self, payload, context):
         self.conn.sadd(self.ops_queue_key, self.queue_key)
-        data = json.dumps({
+        data = dump_json({
             'context': context or {},
             'payload': payload,
             'dataset': self.dataset,
-            'job_id': self.job_id,
+            'job_id': self.job.id,
             'operation': self.operation,
             'priority': self.priority
         })
@@ -48,6 +79,9 @@ class Job(object):
 
     def task_done(self):
         self.progress.mark_finished()
+        # Remove job if done
+        if self.job.is_done():
+            self.job.remove()
 
     def is_done(self):
         """Are the tasks for the current `job_id` and `operation` done?"""
@@ -60,19 +94,30 @@ class Job(object):
         self.conn.delete(self.queue_key)
         self.progress.remove()
 
-    @classmethod
-    def is_job_done_all_ops(cls, conn, dataset, job_id):
+    def is_job_done(self):
         """Are all the tasks for `job_id` done?"""
-        status = Progress.get_job_status(conn, dataset, job_id)
-        return status['pending'] < 1
+        return self.job.is_done()
 
-    @classmethod
-    def remove_job_all_ops(cls, conn, dataset, job_id):
+    def remove_job(self):
         """Remove all tasks for `job_id`"""
-        for operation in Progress.get_dataset_operations(conn.dataset):
-            for priority in cls.PRIORITIES:
-                job = cls(conn, operation, job_id, dataset, priority=priority)
-                job.remove()
+        return self.job.remove()
+
+    def get_tasks(self, limit=500):
+        assert limit > 0
+        pipe = self.conn.pipeline()
+        pipe.lrange(self.queue_key, 0, limit-1)
+        pipe.ltrim(self.queue_key, limit, -1)
+        tasks = pipe.execute()[0]
+        for task in tasks:
+            task = load_json(task)
+            operation = task.get('operation')
+            job_id = task.get('job_id')
+            dataset = task.get('dataset')
+            priority = task.get('priority')
+            job_op = self.__class__(
+                self.conn, operation, job_id, dataset, priority=priority
+            )
+            yield (job_op, task.get('payload'), task.get('context'))
 
     @classmethod
     def _get_operation_queues(cls, conn, operations):
@@ -113,25 +158,16 @@ class Job(object):
             if task_data is None:
                 return (None, None, None)
 
-            task = json.loads(task_data)
+            task = load_json(task_data)
             operation = task.get('operation')
             job_id = task.get('job_id')
             dataset = task.get('dataset')
             priority = task.get('priority')
-            job = cls(conn, operation, job_id, dataset, priority=priority)
-            return (job, task.get('payload'), task.get('context'))
+            job_op = cls(conn, operation, job_id, dataset, priority=priority)
+            return (job_op, task.get('payload'), task.get('context'))
         except BusyLoadingError:
             time.sleep(timeout + 1)
             return (None, None, None)
-
-    @classmethod
-    def remove_dataset(cls, conn, dataset):
-        """Delete all known queues associated with a dataset."""
-        for operation in Progress.get_dataset_operations(conn, dataset):
-            for job_id in Progress.get_dataset_job_ids(conn, dataset):
-                for priority in cls.PRIORITIES:
-                    job = cls(conn, operation, job_id, dataset, priority=priority)  # noqa
-                    job.remove()
 
 
 class Progress(object):
@@ -166,8 +202,10 @@ class Progress(object):
 
     def mark_finished(self, amount=1):
         """Move items from the pending to the finished set."""
-        self.conn.decr(self.pending_key, amount=amount)
-        self.conn.incr(self.finished_key, amount=amount)
+        pipe = self.conn.pipeline()
+        pipe.decr(self.pending_key, amount=amount)
+        pipe.incr(self.finished_key, amount=amount)
+        pipe.execute()
 
     def put_finished(self, amount=1):
         """Add a number of items to the finished set without reducing
@@ -176,10 +214,12 @@ class Progress(object):
         self.conn.incr(self.finished_key, amount=amount)
 
     def remove(self):
-        self.conn.srem(self.dataset_key, self.operation)
-        self.conn.expire(self.dataset_key, REDIS_LONG)
-        self.conn.hdel(self.dataset_jobs_key, self.job_id)
-        self.conn.delete(self.pending_key, self.finished_key)
+        pipe = self.conn.pipeline()
+        pipe.srem(self.dataset_key, self.operation)
+        pipe.expire(self.dataset_key, REDIS_LONG)
+        pipe.hdel(self.dataset_jobs_key, self.job_id)
+        pipe.delete(self.pending_key, self.finished_key)
+        pipe.execute()
 
     def get(self):
         """Get the current status."""
