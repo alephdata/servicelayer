@@ -1,7 +1,7 @@
 from unittest import TestCase
 
 from servicelayer.cache import get_fakeredis
-from servicelayer.process import Job, JobOp, RateLimit, Progress
+from servicelayer.jobs import Job, JobOp, RateLimit, Progress
 
 
 class ProcessTest(TestCase):
