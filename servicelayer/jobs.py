@@ -77,9 +77,12 @@ class JobStage(object):
 
     def task_done(self):
         self.progress.mark_finished()
-        # Remove job if done
-        if self.job.is_done():
-            self.job.remove()
+        self.sync()
+
+    def sync(self):
+        # TODO: Make this atomic
+        pending = self.conn.llen(self.queue_key)
+        self.conn.set(self.progress.pending_key, pending)
 
     def is_done(self):
         """Are the tasks for the current `job_id` and `stage` done?"""

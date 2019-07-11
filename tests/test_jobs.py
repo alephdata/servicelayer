@@ -8,6 +8,7 @@ class ProcessTest(TestCase):
 
     def test_job_queue(self):
         conn = get_fakeredis()
+        conn.flushall()
         ds = 'test_1'
         job_id = 'job_1'
         job_stage = JobStage(conn, JobStage.OP_INGEST, job_id, ds)
@@ -35,17 +36,21 @@ class ProcessTest(TestCase):
         status = job_stage.progress.get()
         assert status['pending'] == 1
         assert status['finished'] == 1
+        # Test that pending count remains 1 due to syncing
         job_stage.task_done()
-        assert Progress.get_dataset_job_ids(conn, ds) == []
         status = job_stage.progress.get()
-        assert status['pending'] == 0
-        assert status['finished'] == 0
-        task = JobStage.get_stage_task(conn, JobStage.OP_INGEST, timeout=1)
+        assert status['pending'] == 1
+        assert status['finished'] == 2
+        task = JobStage.get_operation_task(conn, JobStage.OP_INGEST, timeout=1)
+        nq, payload, context = task
+        assert payload is not None
+        task = JobStage.get_operation_task(conn, JobStage.OP_INGEST, timeout=1)
         nq, payload, context = task
         assert payload is None
 
     def test_queue_clear(self):
         conn = get_fakeredis()
+        conn.flushall()
         ds = 'test_1'
         job_id = 'job_1'
         job_stage = JobStage(conn, JobStage.OP_INGEST, job_id, ds)
