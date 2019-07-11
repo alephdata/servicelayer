@@ -6,16 +6,6 @@ REDIS_SHORT = 84700
 REDIS_LONG = REDIS_SHORT * 200
 REDIS_EXPIRE = env.to_int('REDIS_EXPIRE', REDIS_SHORT * 7)
 
-# General gRPC settings
-GRPC_LB_POLICY = env.get('GRPC_LB_POLICY', 'round_robin')
-GRPC_CONN_AGE = env.to_int('GRPC_CONN_AGE', 500)
-
-# Microservice for OCR
-OCR_SERVICE = env.get('OCR_SERVICE')
-
-# # Entity extraction service
-# NER_SERVICE = env.get('NER_SERVICE')
-
 # Aleph client API settings
 ALEPH_HOST = env.get('MEMORIOUS_ALEPH_HOST')
 ALEPH_HOST = env.get('ALEPH_HOST', ALEPH_HOST)
