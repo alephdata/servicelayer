@@ -25,9 +25,7 @@ setup(
     install_requires=[
         'banal',
         'six >= 1.12.0',
-        'grpcio >= 1.21.1',
         'normality >= 1.0.0',
-        'protobuf >= 3.6.1',
         'redis >= 3.2.1',
         'fakeredis >= 1.0.3',
     ],

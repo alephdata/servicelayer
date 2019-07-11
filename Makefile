@@ -11,9 +11,6 @@ test:
 build:
 	python setup.py sdist bdist_wheel
 
-generate: install
-	python -m grpc_tools.protoc -Iprotos --python_out=. --grpc_python_out=. ./protos/servicelayer/rpc/*.proto
-
 release: clean build
 	twine upload dist/*
 
