@@ -79,10 +79,12 @@ class JobStage(object):
         self.progress.mark_finished()
         self.sync()
 
+    def _sync(self, pipe):
+        pending = pipe.llen(self.queue_key)
+        pipe.set(self.progress.pending_key, pending)
+
     def sync(self):
-        # TODO: Make this atomic
-        pending = self.conn.llen(self.queue_key)
-        self.conn.set(self.progress.pending_key, pending)
+        self.conn.transaction(self._sync, self.queue_key)
 
     def is_done(self):
         """Are the tasks for the current `job_id` and `stage` done?"""
