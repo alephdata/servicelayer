@@ -45,7 +45,7 @@ class Job(object):
 
 
 class JobStage(object):
-    OP_INGEST = 'ingest'
+    INGEST = 'ingest'
 
     PRIO_HIGH = 3
     PRIO_MEDIUM = 2
@@ -112,15 +112,7 @@ class JobStage(object):
         pipe.ltrim(self.queue_key, limit, -1)
         tasks = pipe.execute()[0]
         for task in tasks:
-            task = load_json(task)
-            stage = task.get('stage')
-            job_id = task.get('job_id')
-            dataset = task.get('dataset')
-            priority = task.get('priority')
-            job_stage = self.__class__(
-                self.conn, stage, job_id, dataset, priority=priority
-            )
-            yield (job_stage, task.get('payload'), task.get('context'))
+            yield self._unpack_task(self.conn, task)
 
     @classmethod
     def _get_stage_queues(cls, conn, stages):
@@ -158,19 +150,22 @@ class JobStage(object):
                 if task_data is not None:
                     key, task_data = task_data
 
-            if task_data is None:
-                return (None, None, None)
-
-            task = load_json(task_data)
-            stage = task.get('stage')
-            job_id = task.get('job_id')
-            dataset = task.get('dataset')
-            priority = task.get('priority')
-            job_stage = cls(conn, stage, job_id, dataset, priority=priority)
-            return (job_stage, task.get('payload'), task.get('context'))
+            return cls._unpack_task(conn, task_data)
         except BusyLoadingError:
             time.sleep(timeout + 1)
             return (None, None, None)
+
+    @classmethod
+    def _unpack_task(cls, conn, task_data):
+        if task_data is None:
+            return (None, None, None)
+        task = load_json(task_data)
+        stage = task.get('stage')
+        job_id = task.get('job_id')
+        dataset = task.get('dataset')
+        priority = task.get('priority')
+        job_stage = cls(conn, stage, job_id, dataset, priority=priority)
+        return (job_stage, task.get('payload'), task.get('context'))
 
 
 class Progress(object):
