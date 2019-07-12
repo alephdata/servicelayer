@@ -77,9 +77,14 @@ class JobStage(object):
 
     def task_done(self):
         self.progress.mark_finished()
-        # Remove job if done
-        if self.job.is_done():
-            self.job.remove()
+        self.sync()
+
+    def _sync(self, pipe):
+        pending = pipe.llen(self.queue_key)
+        pipe.set(self.progress.pending_key, pending)
+
+    def sync(self):
+        self.conn.transaction(self._sync, self.queue_key)
 
     def is_done(self):
         """Are the tasks for the current `job_id` and `stage` done?"""
