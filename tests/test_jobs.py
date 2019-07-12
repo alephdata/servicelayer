@@ -41,10 +41,10 @@ class ProcessTest(TestCase):
         status = job_stage.progress.get()
         assert status['pending'] == 1
         assert status['finished'] == 2
-        task = JobStage.get_operation_task(conn, JobStage.OP_INGEST, timeout=1)
+        task = JobStage.get_stage_task(conn, JobStage.OP_INGEST, timeout=1)
         nq, payload, context = task
         assert payload is not None
-        task = JobStage.get_operation_task(conn, JobStage.OP_INGEST, timeout=1)
+        task = JobStage.get_stage_task(conn, JobStage.OP_INGEST, timeout=1)
         nq, payload, context = task
         assert payload is None
 
