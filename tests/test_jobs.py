@@ -11,7 +11,7 @@ class ProcessTest(TestCase):
         conn.flushall()
         ds = 'test_1'
         job_id = 'job_1'
-        job_stage = JobStage(conn, JobStage.OP_INGEST, job_id, ds)
+        job_stage = JobStage(conn, JobStage.INGEST, job_id, ds)
         status = job_stage.progress.get()
         assert status['pending'] == 0
         assert status['finished'] == 0
@@ -21,7 +21,7 @@ class ProcessTest(TestCase):
         assert status['pending'] == 1
         assert status['finished'] == 0
         assert not job_stage.is_done()
-        task = JobStage.get_stage_task(conn, JobStage.OP_INGEST, timeout=None)
+        task = JobStage.get_stage_task(conn, JobStage.INGEST, timeout=None)
         nq, payload, context = task
         assert nq.dataset == job_stage.dataset
         assert payload['test'] == 'foo'
@@ -41,10 +41,10 @@ class ProcessTest(TestCase):
         status = job_stage.progress.get()
         assert status['pending'] == 1
         assert status['finished'] == 2
-        task = JobStage.get_stage_task(conn, JobStage.OP_INGEST, timeout=1)
+        task = JobStage.get_stage_task(conn, JobStage.INGEST, timeout=1)
         nq, payload, context = task
         assert payload is not None
-        task = JobStage.get_stage_task(conn, JobStage.OP_INGEST, timeout=1)
+        task = JobStage.get_stage_task(conn, JobStage.INGEST, timeout=1)
         nq, payload, context = task
         assert payload is None
 
@@ -53,7 +53,7 @@ class ProcessTest(TestCase):
         conn.flushall()
         ds = 'test_1'
         job_id = 'job_1'
-        job_stage = JobStage(conn, JobStage.OP_INGEST, job_id, ds)
+        job_stage = JobStage(conn, JobStage.INGEST, job_id, ds)
         job_stage.queue_task({'test': 'foo'}, {})
         status = job_stage.progress.get()
         assert status['pending'] == 1
@@ -66,7 +66,7 @@ class ProcessTest(TestCase):
         conn = get_fakeredis()
         ds = 'test_1'
         job_id = 'job_1'
-        job_stage = JobStage(conn, JobStage.OP_INGEST, job_id, ds)
+        job_stage = JobStage(conn, JobStage.INGEST, job_id, ds)
         job_stage.queue_task({'test': 'foo'}, {})
         job_stage.queue_task({'test': 'bar'}, {})
         status = job_stage.progress.get()
@@ -84,7 +84,7 @@ class ProcessTest(TestCase):
         conn = get_fakeredis()
         ds = 'test_2'
         job_id = 'job_2'
-        progress = Progress(conn, JobStage.OP_INGEST, job_id, ds)
+        progress = Progress(conn, JobStage.INGEST, job_id, ds)
         status = progress.get()
         assert status['pending'] == 0
         assert status['finished'] == 0
