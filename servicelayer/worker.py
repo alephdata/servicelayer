@@ -20,7 +20,7 @@ class Worker(ABC):
         self.num_threads = num_threads
         self._shutdown = False
 
-    def shutdown(self):
+    def shutdown(self, *args):
         log.warning("Shutting down worker.")
         self._shutdown = True
         if not self.num_threads:
