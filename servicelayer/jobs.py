@@ -6,11 +6,11 @@ from banal import ensure_list
 from redis.exceptions import BusyLoadingError
 
 from servicelayer.settings import REDIS_LONG
+from servicelayer.settings import REDIS_PREFIX as PREFIX
 from servicelayer.cache import make_key
 from servicelayer.util import pack_now, dump_json, load_json
 
 log = logging.getLogger(__name__)
-PREFIX = 'sla'
 
 
 class Job(object):

@@ -29,9 +29,13 @@ def unpack_int(value):
         return 0
 
 
+def pack_int(value):
+    return str(value)
+
+
 def pack_datetime(value):
-    if value is not None:
-        return str(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
 
 
 def pack_now():
@@ -42,7 +46,10 @@ def unpack_datetime(value, default=None):
     try:
         return datetime.strptime(value, "%Y-%m-%d %H:%M:%S.%f")
     except Exception:
-        return default
+        try:
+            return datetime.strptime(value, "%Y-%m-%d").date()
+        except Exception:
+            return default
 
 
 class JSONEncoder(json.JSONEncoder):
