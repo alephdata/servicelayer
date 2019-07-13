@@ -1,3 +1,4 @@
+import multiprocessing
 from servicelayer import env
 
 # Redis cache
@@ -5,6 +6,12 @@ REDIS_URL = env.get('REDIS_URL')
 REDIS_SHORT = 84700
 REDIS_LONG = REDIS_SHORT * 200
 REDIS_EXPIRE = env.to_int('REDIS_EXPIRE', REDIS_SHORT * 7)
+REDIS_PREFIX = 'sla'
+
+# Worker
+WORKER_RETRY = env.to_int('WORKER_RETRY', 3)
+WORKER_THREADS = min(8, multiprocessing.cpu_count())
+WORKER_THREADS = env.to_int('WORKER_THREADS', WORKER_THREADS)
 
 # Aleph client API settings
 ALEPH_HOST = env.get('MEMORIOUS_ALEPH_HOST')
