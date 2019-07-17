@@ -33,7 +33,7 @@ class Worker(ABC):
             self.retry(stage, payload, context)
             raise
         finally:
-            stage.task_done()
+            stage.task_done(context['sla_task_key'])
             if stage.job.is_done():
                 stage.sync()
 

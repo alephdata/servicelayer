@@ -2,8 +2,10 @@ import time
 import random
 import logging
 import uuid
+import hashlib
 from banal import ensure_list
-from redis.exceptions import BusyLoadingError
+
+from redis.exceptions import BusyLoadingError, WatchError
 
 from servicelayer.settings import REDIS_LONG
 from servicelayer.settings import REDIS_PREFIX as PREFIX
@@ -18,6 +20,7 @@ class Job(object):
         self.conn = conn
         self.dataset = dataset
         self.id = job_id
+        self.executing_tasks_key = make_key(PREFIX, 'qjt', self.id, dataset)
 
     @classmethod
     def random_id(cls):
@@ -35,6 +38,48 @@ class Job(object):
                     self.dataset, priority=priority
                 )
                 job_stage.remove()
+
+    def _get_all_pending_keys(self):
+        """Return the pending keys for all stages in this job"""
+        keys = []
+        for stage in Progress.get_dataset_stages(self.conn, self.dataset):
+            for priority in JobStage.PRIORITIES:
+                job_stage = JobStage(
+                    self.conn, stage, self.id,
+                    self.dataset, priority=priority
+                )
+                keys.append(job_stage.progress.pending_key)
+        return keys
+
+    def execute_if_done(self, callback, *args, **kwargs):
+        pipe = self.conn.pipeline()
+        try:
+            pipe.watch(self.executing_tasks_key, *self._get_all_pending_keys())
+            # Make sure there is no tasks currently being executed
+            if not self.conn.llen(self.executing_tasks_key) == 0:
+                return
+            # Make sure none of the stages for the job has non-zero pending
+            # tasks
+            pending_list = [
+                max(0, int(pending or 0)) for pending in pipe.mget(
+                    self._get_all_pending_keys()
+                )
+            ]
+            if not all(val == 0 for val in pending_list):
+                return
+            callback(*args, **kwargs)
+        except WatchError:
+            log.info("State changed. Not executing callback for job %s", self.id)  # noqa
+            return
+
+    def make_task_key(self, task_data):
+        return hashlib.sha1(task_data.encode()).hexdigest()
+
+    def remove_executing_task(self, task_key):
+        self.conn.lrem(self.executing_tasks_key, 1, task_key)
+
+    def add_executing_task(self, task_key):
+        self.conn.rpush(self.executing_tasks_key, task_key)
 
     @classmethod
     def remove_dataset(cls, conn, dataset):
@@ -75,7 +120,8 @@ class JobStage(object):
         self.conn.rpush(self.queue_key, data)
         self.progress.mark_pending()
 
-    def task_done(self):
+    def task_done(self, task_key):
+        self.job.remove_executing_task(task_key)
         self.progress.mark_finished()
         self.sync()
 
@@ -165,7 +211,13 @@ class JobStage(object):
         dataset = task.get('dataset')
         priority = task.get('priority')
         job_stage = cls(conn, stage, job_id, dataset, priority=priority)
-        return (job_stage, task.get('payload'), task.get('context'))
+        # Add task to the list of currently executing tasks
+        job = Job(conn, dataset, job_id)
+        task_key = job.make_task_key(task_data)
+        job.add_executing_task(task_key)
+        task_context = task.get('context')
+        task_context['sla_task_key'] = task_key
+        return (job_stage, task.get('payload'), task_context)
 
 
 class Progress(object):
