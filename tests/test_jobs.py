@@ -16,7 +16,7 @@ class ProcessTest(TestCase):
         assert status['pending'] == 0
         assert status['finished'] == 0
         assert job_stage.is_done()
-        task1 = Task({'test': 'foo'}, {}, job_stage)
+        task1 = Task(job_stage, {'test': 'foo'}, {})
         job_stage.queue_task(task1)
         status = job_stage.progress.get()
         assert status['pending'] == 1
@@ -28,17 +28,17 @@ class ProcessTest(TestCase):
         status = job_stage.progress.get()
         assert status['pending'] == 1
         assert status['finished'] == 0
-        task2 = Task({'test': 'bar'}, {}, job_stage)
+        task2 = Task(job_stage, {'test': 'bar'}, {})
         job_stage.queue_task(task2)
         status = job_stage.progress.get()
         assert status['pending'] == 2
         assert status['finished'] == 0
-        job_stage.task_done(task1)
+        task1.done()
         status = job_stage.progress.get()
         assert status['pending'] == 1
         assert status['finished'] == 1
         # Test that pending count remains 1 due to syncing
-        job_stage.task_done(task2)
+        task2.done()
         status = job_stage.progress.get()
         assert status['pending'] == 1
         assert status['finished'] == 2
@@ -54,7 +54,7 @@ class ProcessTest(TestCase):
         ds = 'test_1'
         job_id = 'job_1'
         job_stage = JobStage(conn, JobStage.INGEST, job_id, ds)
-        task = Task({'test': 'foo'}, {}, job_stage)
+        task = Task(job_stage, {'test': 'foo'}, {})
         job_stage.queue_task(task)
         status = job_stage.progress.get()
         assert status['pending'] == 1
@@ -69,8 +69,8 @@ class ProcessTest(TestCase):
         ds = 'test_1'
         job_id = 'job_1'
         job_stage = JobStage(conn, JobStage.INGEST, job_id, ds)
-        task1 = Task({'test': 'foo'}, {}, job_stage)
-        task2 = Task({'test': 'bar'}, {}, job_stage)
+        task1 = Task(job_stage, {'test': 'foo'}, {})
+        task2 = Task(job_stage, {'test': 'bar'}, {})
         task1.queue()
         task2.queue()
         status = job_stage.progress.get()
@@ -103,8 +103,8 @@ class ProcessTest(TestCase):
         ds = 'test_1'
         job_id = 'job_1'
         job_stage = JobStage(conn, JobStage.INGEST, job_id, ds)
-        task1 = Task({'test': 'foo'}, {}, job_stage)
-        task2 = Task({'test': 'bar'}, {}, job_stage)
+        task1 = Task(job_stage, {'test': 'foo'}, {})
+        task2 = Task(job_stage, {'test': 'bar'}, {})
         job_stage.queue_task(task1)
         job_stage.queue_task(task2)
         status = job_stage.progress.get()

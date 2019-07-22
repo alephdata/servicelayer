@@ -2,7 +2,6 @@ import time
 import random
 import logging
 import uuid
-import hashlib
 from banal import ensure_list
 
 from redis.exceptions import BusyLoadingError, WatchError
@@ -87,18 +86,20 @@ class Job(object):
 
 
 class Task(object):
-    def __init__(self, payload, context, job_stage):
+    def __init__(self, stage, payload=None, context=None, task_id=None):
         self.payload = payload
         self.context = context
-        self.stage = job_stage
-        self.task_id = self._make_task_id()
+        self.stage = stage
+        self.job = stage.job
+        self.task_id = task_id or self._make_task_id()
 
     def serialize(self):
         return dump_json({
             'context': self.context or {},
             'payload': self.payload,
             'dataset': self.stage.dataset,
-            'job_id': self.stage.job.id,
+            'job_id': self.job.id,
+            'task_id': self.task_id,
             'stage': self.stage.stage,
             'priority': self.stage.priority
         })
@@ -106,8 +107,11 @@ class Task(object):
     def queue(self):
         self.stage.queue_task(self)
 
+    def done(self):
+        self.stage.task_done(self)
+
     def _make_task_id(self):
-        return hashlib.sha1(self.serialize().encode()).hexdigest()
+        return uuid.uuid4().hex
 
     @classmethod
     def unpack_taskdata(cls, conn, task_data):
@@ -121,7 +125,8 @@ class Task(object):
         job_stage = JobStage(conn, stage, job_id, dataset, priority=priority)
         payload = task_data.get('payload')
         context = task_data.get('context')
-        task = Task(payload=payload, context=context, job_stage=job_stage)
+        task_id = task_data.get('task_id')
+        task = Task(job_stage, payload=payload, context=context, task_id=task_id)  # noqa
         # Add task to the list of currently executing tasks
         job = Job(conn, dataset, job_id)
         job.add_executing_task(task)

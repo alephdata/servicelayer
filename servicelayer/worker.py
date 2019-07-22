@@ -33,8 +33,8 @@ class Worker(ABC):
             self.retry(task)
             raise
         finally:
-            task.stage.task_done(task)
-            if task.stage.job.is_done():
+            task.done()
+            if task.job.is_done():
                 task.stage.sync()
 
     def init_internal(self):

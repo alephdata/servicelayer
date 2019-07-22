@@ -23,7 +23,7 @@ class WorkerTest(TestCase):
         worker.sync()
         assert worker.test_done == 0, worker.test_done
         stage = JobStage(conn, operation, 'job_id', 'test')
-        task = Task({}, {}, stage)
+        task = Task(stage, {}, {})
         task.queue()
         assert not stage.is_done()
         assert worker.test_done == 0, worker.test_done
