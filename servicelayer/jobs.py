@@ -72,14 +72,11 @@ class Job(object):
             log.info("State changed. Not executing callback for job %s", self.id)  # noqa
             return
 
-    def make_task_key(self, task_data):
-        return hashlib.sha1(task_data.encode()).hexdigest()
+    def remove_executing_task(self, task):
+        self.conn.lrem(self.executing_tasks_key, 1, task.task_id)
 
-    def remove_executing_task(self, task_key):
-        self.conn.lrem(self.executing_tasks_key, 1, task_key)
-
-    def add_executing_task(self, task_key):
-        self.conn.rpush(self.executing_tasks_key, task_key)
+    def add_executing_task(self, task):
+        self.conn.rpush(self.executing_tasks_key, task.task_id)
 
     @classmethod
     def remove_dataset(cls, conn, dataset):
@@ -87,6 +84,48 @@ class Job(object):
         for job_id in Progress.get_dataset_job_ids(conn, dataset):
             job = cls(conn, dataset, job_id)
             job.remove()
+
+
+class Task(object):
+    def __init__(self, payload, context, job_stage):
+        self.payload = payload
+        self.context = context
+        self.stage = job_stage
+        self.task_id = self._make_task_id()
+
+    def serialize(self):
+        return dump_json({
+            'context': self.context or {},
+            'payload': self.payload,
+            'dataset': self.stage.dataset,
+            'job_id': self.stage.job.id,
+            'stage': self.stage.stage,
+            'priority': self.stage.priority
+        })
+
+    def queue(self):
+        self.stage.queue_task(self)
+
+    def _make_task_id(self):
+        return hashlib.sha1(self.serialize().encode()).hexdigest()
+
+    @classmethod
+    def unpack_taskdata(cls, conn, task_data):
+        if task_data is None:
+            return None
+        task_data = load_json(task_data)
+        stage = task_data.get('stage')
+        job_id = task_data.get('job_id')
+        dataset = task_data.get('dataset')
+        priority = task_data.get('priority')
+        job_stage = JobStage(conn, stage, job_id, dataset, priority=priority)
+        payload = task_data.get('payload')
+        context = task_data.get('context')
+        task = Task(payload=payload, context=context, job_stage=job_stage)
+        # Add task to the list of currently executing tasks
+        job = Job(conn, dataset, job_id)
+        job.add_executing_task(task)
+        return task
 
 
 class JobStage(object):
@@ -107,21 +146,14 @@ class JobStage(object):
         self.queue_key = make_key(PREFIX, 'q', stage, self.job.id, dataset)
         self.ops_queue_key = make_key(PREFIX, 'qo', stage, priority)
 
-    def queue_task(self, payload, context):
+    def queue_task(self, task):
         self.conn.sadd(self.ops_queue_key, self.queue_key)
-        data = dump_json({
-            'context': context or {},
-            'payload': payload,
-            'dataset': self.dataset,
-            'job_id': self.job.id,
-            'stage': self.stage,
-            'priority': self.priority
-        })
+        data = task.serialize()
         self.conn.rpush(self.queue_key, data)
         self.progress.mark_pending()
 
-    def task_done(self, task_key):
-        self.job.remove_executing_task(task_key)
+    def task_done(self, task):
+        self.job.remove_executing_task(task)
         self.progress.mark_finished()
         self.sync()
 
@@ -158,7 +190,7 @@ class JobStage(object):
         pipe.ltrim(self.queue_key, limit, -1)
         tasks = pipe.execute()[0]
         for task in tasks:
-            yield self._unpack_task(self.conn, task)
+            yield Task.unpack_taskdata(self.conn, task)
 
     @classmethod
     def _get_stage_queues(cls, conn, stages):
@@ -183,7 +215,7 @@ class JobStage(object):
         try:
             queues = cls._get_stage_queues(conn, stages)
             if not len(queues):
-                return (None, None, None)
+                return None
             # Support a magic value to not block, i.e. timeout None
             if timeout is None:
                 # LPOP does not support multiple lists.
@@ -196,28 +228,10 @@ class JobStage(object):
                 if task_data is not None:
                     key, task_data = task_data
 
-            return cls._unpack_task(conn, task_data)
+            return Task.unpack_taskdata(conn, task_data)
         except BusyLoadingError:
             time.sleep(timeout + 1)
-            return (None, None, None)
-
-    @classmethod
-    def _unpack_task(cls, conn, task_data):
-        if task_data is None:
-            return (None, None, None)
-        task = load_json(task_data)
-        stage = task.get('stage')
-        job_id = task.get('job_id')
-        dataset = task.get('dataset')
-        priority = task.get('priority')
-        job_stage = cls(conn, stage, job_id, dataset, priority=priority)
-        # Add task to the list of currently executing tasks
-        job = Job(conn, dataset, job_id)
-        task_key = job.make_task_key(task_data)
-        job.add_executing_task(task_key)
-        task_context = task.get('context')
-        task_context['sla_task_key'] = task_key
-        return (job_stage, task.get('payload'), task_context)
+            return None
 
 
 class Progress(object):
