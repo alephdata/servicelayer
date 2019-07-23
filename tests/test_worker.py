@@ -10,7 +10,7 @@ class CountingWorker(Worker):
     def boot(self):
         self.test_done = 0
 
-    def handle(self, stage, payload, context):
+    def handle(self, task):
         self.test_done += 1
 
 
