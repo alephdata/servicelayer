@@ -82,9 +82,10 @@ class ProcessTest(TestCase):
 
         task = JobStage.get_stage_task(conn, JobStage.INGEST, timeout=1)
         job_stage.task_done(task)
+        job_stage.job.add_callback(callback, test_list)
         status = job_stage.progress.get()
         assert status['pending'] == 1
-        job_stage.job.execute_if_done(callback, test_list)
+        job_stage.job.execute_callback_if_done()
         # callback shouldn't be executed
         print(test_list)
         assert len(test_list) == 0
@@ -92,7 +93,7 @@ class ProcessTest(TestCase):
         job_stage.task_done(task)
         status = job_stage.progress.get()
         assert status['pending'] == 0
-        job_stage.job.execute_if_done(callback, test_list)
+        job_stage.job.execute_callback_if_done()
         # callback should have executed
         print(test_list)
         assert len(test_list) == 1

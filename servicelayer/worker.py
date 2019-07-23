@@ -28,7 +28,7 @@ class Worker(ABC):
 
     def handle_safe(self, task):
         try:
-            self.handle(task.stage, task.payload, task.context)
+            self.handle(task)
         except (SystemExit, KeyboardInterrupt, Exception):
             self.retry(task)
             raise
@@ -36,6 +36,8 @@ class Worker(ABC):
             task.done()
             if task.job.is_done():
                 task.stage.sync()
+            if task.job.callback:
+                task.job.execute_callback_if_done()
 
     def init_internal(self):
         self._shutdown = False
@@ -105,5 +107,5 @@ class Worker(ABC):
         pass
 
     @abstractmethod
-    def handle(self, stage, payload, context):
+    def handle(self, task):
         raise NotImplementedError

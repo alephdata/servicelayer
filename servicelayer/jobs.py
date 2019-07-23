@@ -20,6 +20,7 @@ class Job(object):
         self.dataset = dataset
         self.id = job_id
         self.executing_tasks_key = make_key(PREFIX, 'qjt', self.id, dataset)
+        self.callback = None
 
     @classmethod
     def random_id(cls):
@@ -50,7 +51,12 @@ class Job(object):
                 keys.append(job_stage.progress.pending_key)
         return keys
 
-    def execute_if_done(self, callback, *args, **kwargs):
+    def add_callback(self, callback, *args, **kwargs):
+        self.callback = callback
+        self.callback_args = args
+        self.callback_kwargs = kwargs
+
+    def execute_callback_if_done(self):
         pipe = self.conn.pipeline()
         try:
             pipe.watch(self.executing_tasks_key, *self._get_all_pending_keys())
@@ -66,7 +72,7 @@ class Job(object):
             ]
             if not all(val == 0 for val in pending_list):
                 return
-            callback(*args, **kwargs)
+            self.callback(*self.callback_args, **self.callback_kwargs)
         except WatchError:
             log.info("State changed. Not executing callback for job %s", self.id)  # noqa
             return
