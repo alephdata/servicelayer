@@ -26,27 +26,29 @@ class Worker(ABC):
         if not self.num_threads:
             raise SystemExit()
 
-    def handle_safe(self, stage, payload, context):
+    def handle_safe(self, task):
         try:
-            self.handle(stage, payload, context)
+            self.handle(task)
         except (SystemExit, KeyboardInterrupt, Exception):
-            self.retry(stage, payload, context)
+            self.retry(task)
             raise
         finally:
-            stage.task_done()
-            if stage.job.is_done():
-                stage.sync()
+            task.done()
+            if task.job.is_done():
+                task.stage.sync()
+            if task.job.callback:
+                task.job.execute_callback_if_done()
 
     def init_internal(self):
         self._shutdown = False
         self.boot()
 
-    def retry(self, stage, payload, context):
-        retries = int(context.get('retries', 0))
+    def retry(self, task):
+        retries = int(task.context.get('retries', 0))
         if retries < settings.WORKER_RETRY:
             log.warning("Queue failed task for re-try...")
-            context['retries'] = retries + 1
-            stage.queue_task(payload, context)
+            task.context['retries'] = retries + 1
+            task.stage.queue_task(task)
 
     def process(self):
         while True:
@@ -54,13 +56,12 @@ class Worker(ABC):
             task = JobStage.get_stage_task(self.conn,
                                            self.get_stages(),
                                            timeout=5)
-            stage, payload, context = task
-            if stage is None:
+            if task is None:
                 continue
             if self._shutdown:
-                self.retry(stage, payload, context)
+                self.retry(task)
                 return
-            self.handle_safe(stage, payload, context)
+            self.handle_safe(task)
             if self._shutdown:
                 return
 
@@ -72,10 +73,9 @@ class Worker(ABC):
             task = JobStage.get_stage_task(self.conn,
                                            self.get_stages(),
                                            timeout=1)
-            stage, payload, context = task
-            if stage is None:
+            if task is None:
                 return
-            self.handle_safe(stage, payload, context)
+            self.handle_safe(task)
 
     def run(self):
         # Try to quit gracefully, e.g. after finishing the current task.
@@ -106,6 +106,10 @@ class Worker(ABC):
         """Optional hook for running a periodic task checker."""
         pass
 
+    def after_task(self, task):
+        """Optional hook excuted after handling a task"""
+        pass
+
     @abstractmethod
-    def handle(self, stage, payload, context):
+    def handle(self, task):
         raise NotImplementedError

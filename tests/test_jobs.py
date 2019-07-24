@@ -1,7 +1,7 @@
 from unittest import TestCase
 
 from servicelayer.cache import get_fakeredis
-from servicelayer.jobs import Job, JobStage, RateLimit, Progress
+from servicelayer.jobs import Job, JobStage, RateLimit, Progress, Task
 
 
 class ProcessTest(TestCase):
@@ -16,37 +16,37 @@ class ProcessTest(TestCase):
         assert status['pending'] == 0
         assert status['finished'] == 0
         assert job_stage.is_done()
-        job_stage.queue_task({'test': 'foo'}, {})
+        task1 = Task(job_stage, {'test': 'foo'}, {})
+        job_stage.queue_task(task1)
         status = job_stage.progress.get()
         assert status['pending'] == 1
         assert status['finished'] == 0
         assert not job_stage.is_done()
         task = JobStage.get_stage_task(conn, JobStage.INGEST, timeout=None)
-        nq, payload, context = task
-        assert nq.dataset == job_stage.dataset
-        assert payload['test'] == 'foo'
+        assert task.stage.dataset == job_stage.dataset
+        assert task.payload['test'] == 'foo'
         status = job_stage.progress.get()
         assert status['pending'] == 1
         assert status['finished'] == 0
-        job_stage.queue_task({'test': 'bar'}, {})
+        task2 = Task(job_stage, {'test': 'bar'}, {})
+        job_stage.queue_task(task2)
         status = job_stage.progress.get()
         assert status['pending'] == 2
         assert status['finished'] == 0
-        job_stage.task_done()
+        task1.done()
         status = job_stage.progress.get()
         assert status['pending'] == 1
         assert status['finished'] == 1
         # Test that pending count remains 1 due to syncing
-        job_stage.task_done()
+        task2.done()
         status = job_stage.progress.get()
         assert status['pending'] == 1
         assert status['finished'] == 2
         task = JobStage.get_stage_task(conn, JobStage.INGEST, timeout=1)
-        nq, payload, context = task
-        assert payload is not None
+        assert task is not None
+        assert isinstance(task, Task)
         task = JobStage.get_stage_task(conn, JobStage.INGEST, timeout=1)
-        nq, payload, context = task
-        assert payload is None
+        assert task is None
 
     def test_queue_clear(self):
         conn = get_fakeredis()
@@ -54,7 +54,8 @@ class ProcessTest(TestCase):
         ds = 'test_1'
         job_id = 'job_1'
         job_stage = JobStage(conn, JobStage.INGEST, job_id, ds)
-        job_stage.queue_task({'test': 'foo'}, {})
+        task = Task(job_stage, {'test': 'foo'}, {})
+        job_stage.queue_task(task)
         status = job_stage.progress.get()
         assert status['pending'] == 1
         Job.remove_dataset(conn, ds)
@@ -62,22 +63,58 @@ class ProcessTest(TestCase):
         assert status['pending'] == 0
         assert Progress.get_dataset_job_ids(conn, ds) == []
 
-    def test_fetch_multiple_task(self):
+    def test_execute_if_job_done(self):
         conn = get_fakeredis()
+        conn.flushall()
         ds = 'test_1'
         job_id = 'job_1'
         job_stage = JobStage(conn, JobStage.INGEST, job_id, ds)
-        job_stage.queue_task({'test': 'foo'}, {})
-        job_stage.queue_task({'test': 'bar'}, {})
+        task1 = Task(job_stage, {'test': 'foo'}, {})
+        task2 = Task(job_stage, {'test': 'bar'}, {})
+        task1.queue()
+        task2.queue()
+        status = job_stage.progress.get()
+        assert status['pending'] == 2
+        test_list = []
+
+        def callback(test_list):
+            test_list.append(1)
+
+        task = JobStage.get_stage_task(conn, JobStage.INGEST, timeout=1)
+        job_stage.task_done(task)
+        status = job_stage.progress.get()
+        assert status['pending'] == 1
+        job_stage.job.execute_if_done(callback, test_list)
+        # callback shouldn't be executed
+        print(test_list)
+        assert len(test_list) == 0
+        task = JobStage.get_stage_task(conn, JobStage.INGEST, timeout=1)
+        job_stage.task_done(task)
+        status = job_stage.progress.get()
+        assert status['pending'] == 0
+        job_stage.job.execute_if_done(callback, test_list)
+        # callback should have executed
+        print(test_list)
+        assert len(test_list) == 1
+
+    def test_fetch_multiple_task(self):
+        conn = get_fakeredis()
+        conn.flushall()
+        ds = 'test_1'
+        job_id = 'job_1'
+        job_stage = JobStage(conn, JobStage.INGEST, job_id, ds)
+        task1 = Task(job_stage, {'test': 'foo'}, {})
+        task2 = Task(job_stage, {'test': 'bar'}, {})
+        job_stage.queue_task(task1)
+        job_stage.queue_task(task2)
         status = job_stage.progress.get()
         assert status['pending'] == 2
         tasks = list(job_stage.get_tasks(limit=5))
         assert len(tasks) == 2
         for task in tasks:
-            assert len(task) == 3
-            assert isinstance(task[0], JobStage)
-        assert tasks[0][1] == {'test': 'foo'}
-        assert tasks[1][1] == {'test': 'bar'}
+            assert isinstance(task, Task)
+        assert tasks[0].payload == {'test': 'foo'}
+        assert tasks[1].payload == {'test': 'bar'}
         Job.remove_dataset(conn, ds)
 
     def test_progress(self):

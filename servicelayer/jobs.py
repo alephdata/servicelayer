@@ -3,7 +3,8 @@ import random
 import logging
 import uuid
 from banal import ensure_list
-from redis.exceptions import BusyLoadingError
+
+from redis.exceptions import BusyLoadingError, WatchError
 
 from servicelayer.settings import REDIS_LONG
 from servicelayer.settings import REDIS_PREFIX as PREFIX
@@ -18,6 +19,8 @@ class Job(object):
         self.conn = conn
         self.dataset = dataset
         self.id = job_id
+        self.executing_tasks_key = make_key(PREFIX, 'qjt', self.id, dataset)
+        self.callback = None
 
     @classmethod
     def random_id(cls):
@@ -36,12 +39,99 @@ class Job(object):
                 )
                 job_stage.remove()
 
+    def _get_all_pending_keys(self):
+        """Return the pending keys for all stages in this job"""
+        keys = []
+        for stage in Progress.get_dataset_stages(self.conn, self.dataset):
+            for priority in JobStage.PRIORITIES:
+                job_stage = JobStage(
+                    self.conn, stage, self.id,
+                    self.dataset, priority=priority
+                )
+                keys.append(job_stage.progress.pending_key)
+        return keys
+
+    def execute_if_done(self, callback, *args, **kwargs):
+        pipe = self.conn.pipeline()
+        try:
+            pipe.watch(self.executing_tasks_key, *self._get_all_pending_keys())
+            # Make sure there is no tasks currently being executed
+            if not self.conn.llen(self.executing_tasks_key) == 0:
+                return
+            # Make sure none of the stages for the job has non-zero pending
+            # tasks
+            pending_list = [
+                max(0, int(pending or 0)) for pending in pipe.mget(
+                    self._get_all_pending_keys()
+                )
+            ]
+            if not all(val == 0 for val in pending_list):
+                return
+            callback(*args, **kwargs)
+        except WatchError:
+            log.info("State changed. Not executing callback for job %s", self.id)  # noqa
+            return
+
+    def remove_executing_task(self, task):
+        self.conn.lrem(self.executing_tasks_key, 1, task.task_id)
+
+    def add_executing_task(self, task):
+        self.conn.rpush(self.executing_tasks_key, task.task_id)
+
     @classmethod
     def remove_dataset(cls, conn, dataset):
         """Delete all known queues associated with a dataset."""
         for job_id in Progress.get_dataset_job_ids(conn, dataset):
             job = cls(conn, dataset, job_id)
             job.remove()
+
+
+class Task(object):
+    def __init__(self, stage, payload=None, context=None, task_id=None):
+        self.payload = payload
+        self.context = context
+        self.stage = stage
+        self.job = stage.job
+        self.task_id = task_id or self._make_task_id()
+
+    def serialize(self):
+        return dump_json({
+            'context': self.context or {},
+            'payload': self.payload,
+            'dataset': self.stage.dataset,
+            'job_id': self.job.id,
+            'task_id': self.task_id,
+            'stage': self.stage.stage,
+            'priority': self.stage.priority
+        })
+
+    def queue(self):
+        self.stage.queue_task(self)
+
+    def done(self):
+        self.stage.task_done(self)
+
+    def _make_task_id(self):
+        return uuid.uuid4().hex
+
+    @classmethod
+    def unpack_taskdata(cls, conn, task_data):
+        if task_data is None:
+            return None
+        task_data = load_json(task_data)
+        stage = task_data.get('stage')
+        job_id = task_data.get('job_id')
+        dataset = task_data.get('dataset')
+        priority = task_data.get('priority')
+        job_stage = JobStage(conn, stage, job_id, dataset, priority=priority)
+        payload = task_data.get('payload')
+        context = task_data.get('context')
+        task_id = task_data.get('task_id')
+        task = Task(job_stage, payload=payload, context=context, task_id=task_id)  # noqa
+        # Add task to the list of currently executing tasks
+        job = Job(conn, dataset, job_id)
+        job.add_executing_task(task)
+        return task
 
 
 class JobStage(object):
@@ -62,20 +152,14 @@ class JobStage(object):
         self.queue_key = make_key(PREFIX, 'q', stage, self.job.id, dataset)
         self.ops_queue_key = make_key(PREFIX, 'qo', stage, priority)
 
-    def queue_task(self, payload, context):
+    def queue_task(self, task):
         self.conn.sadd(self.ops_queue_key, self.queue_key)
-        data = dump_json({
-            'context': context or {},
-            'payload': payload,
-            'dataset': self.dataset,
-            'job_id': self.job.id,
-            'stage': self.stage,
-            'priority': self.priority
-        })
+        data = task.serialize()
         self.conn.rpush(self.queue_key, data)
         self.progress.mark_pending()
 
-    def task_done(self):
+    def task_done(self, task):
+        self.job.remove_executing_task(task)
         self.progress.mark_finished()
         self.sync()
 
@@ -112,7 +196,7 @@ class JobStage(object):
         pipe.ltrim(self.queue_key, limit, -1)
         tasks = pipe.execute()[0]
         for task in tasks:
-            yield self._unpack_task(self.conn, task)
+            yield Task.unpack_taskdata(self.conn, task)
 
     @classmethod
     def _get_stage_queues(cls, conn, stages):
@@ -137,7 +221,7 @@ class JobStage(object):
         try:
             queues = cls._get_stage_queues(conn, stages)
             if not len(queues):
-                return (None, None, None)
+                return None
             # Support a magic value to not block, i.e. timeout None
             if timeout is None:
                 # LPOP does not support multiple lists.
@@ -150,22 +234,10 @@ class JobStage(object):
                 if task_data is not None:
                     key, task_data = task_data
 
-            return cls._unpack_task(conn, task_data)
+            return Task.unpack_taskdata(conn, task_data)
         except BusyLoadingError:
             time.sleep(timeout + 1)
-            return (None, None, None)
-
-    @classmethod
-    def _unpack_task(cls, conn, task_data):
-        if task_data is None:
-            return (None, None, None)
-        task = load_json(task_data)
-        stage = task.get('stage')
-        job_id = task.get('job_id')
-        dataset = task.get('dataset')
-        priority = task.get('priority')
-        job_stage = cls(conn, stage, job_id, dataset, priority=priority)
-        return (job_stage, task.get('payload'), task.get('context'))
+            return None
 
 
 class Progress(object):
