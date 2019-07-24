@@ -106,6 +106,10 @@ class Worker(ABC):
         """Optional hook for running a periodic task checker."""
         pass
 
+    def after_task(self, task):
+        """Optional hook excuted after handling a task"""
+        pass
+
     @abstractmethod
     def handle(self, task):
         raise NotImplementedError
