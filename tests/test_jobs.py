@@ -1,7 +1,7 @@
 from unittest import TestCase
 
 from servicelayer.cache import get_fakeredis
-from servicelayer.jobs import Job, JobStage, RateLimit, Progress, Task
+from servicelayer.jobs import Job, JobStage, Progress, Task
 
 
 class ProcessTest(TestCase):
@@ -143,13 +143,3 @@ class ProcessTest(TestCase):
         progress.remove()
         status = progress.get()
         assert status['finished'] == 0
-
-    def test_rate(self):
-        conn = get_fakeredis()
-        limit = RateLimit(conn, 'banana', limit=10)
-        assert limit.check()
-        limit.update()
-        assert limit.check()
-        for i in range(13):
-            limit.update()
-        assert not limit.check()
