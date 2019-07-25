@@ -83,6 +83,7 @@ class Job(object):
         for job_id in Progress.get_dataset_job_ids(conn, dataset):
             job = cls(conn, dataset, job_id)
             job.remove()
+        conn.delete(make_key(PREFIX, 'qd', dataset))
 
 
 class Task(object):
@@ -284,7 +285,6 @@ class Progress(object):
 
     def remove(self):
         pipe = self.conn.pipeline()
-        pipe.srem(self.dataset_key, self.stage)
         pipe.expire(self.dataset_key, REDIS_LONG)
         pipe.hdel(self.dataset_jobs_key, self.job_id)
         pipe.delete(self.pending_key, self.finished_key)
