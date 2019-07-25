@@ -36,8 +36,7 @@ class Worker(ABC):
             task.done()
             if task.job.is_done():
                 task.stage.sync()
-            if task.job.callback:
-                task.job.execute_callback_if_done()
+            self.after_task(task)
 
     def init_internal(self):
         self._shutdown = False

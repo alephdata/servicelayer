@@ -20,7 +20,6 @@ class Job(object):
         self.dataset = dataset
         self.id = job_id
         self.executing_tasks_key = make_key(PREFIX, 'qjt', self.id, dataset)
-        self.callback = None
 
     @classmethod
     def random_id(cls):
