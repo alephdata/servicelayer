@@ -44,7 +44,7 @@ def pack_now():
 
 def unpack_datetime(value, default=None):
     try:
-        return datetime.strptime(value, "%Y-%m-%d %H:%M:%S.%f")
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%f")
     except Exception:
         try:
             return datetime.strptime(value, "%Y-%m-%d").date()

@@ -21,6 +21,10 @@ class UtilTest(TestCase):
         assert unpacked == date
         now = pack_now()
         assert now.startswith(packed), now
+        time = datetime.utcnow()
+        packed = pack_datetime(time)
+        unpacked = unpack_datetime(packed)
+        assert unpacked == time
         assert pack_datetime('Banana') is None
         assert unpack_datetime('Banana') is None
 
