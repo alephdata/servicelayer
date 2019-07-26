@@ -10,7 +10,7 @@ from servicelayer.settings import REDIS_EXPIRE
 from servicelayer.settings import REDIS_PREFIX as PREFIX
 from servicelayer.cache import make_key
 from servicelayer.util import pack_now, dump_json, load_json
-from servicelayer.util import sum_values
+from servicelayer.util import unpack_int, sum_values
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class Dataset(object):
         return self.conn.smembers(self.stages_key)
 
     def get_job_ids(self):
-        return self.conn.smembers(self.stages_key)
+        return self.conn.smembers(self.jobs_key)
 
     def get_jobs(self):
         for job_id in self.get_job_ids():
@@ -68,8 +68,8 @@ class Job(object):
         self.conn = conn
         self.id = job_id
         self.dataset = Dataset.ensure(conn, dataset)
-        self.start_key = make_key(PREFIX, 'qjst', self.id, dataset)
-        self.end_key = make_key(PREFIX, 'qjen', self.id, dataset)
+        self.start_key = make_key(PREFIX, 'qd', self.id, dataset, 'start')
+        self.end_key = make_key(PREFIX, 'qd', self.id, dataset, 'end')
 
     def get_stage(self, name):
         return Stage(self, name)
@@ -78,38 +78,28 @@ class Job(object):
         for stage in self.dataset.get_stages():
             yield self.get_stage(stage)
 
-    @classmethod
-    def random_id(cls):
-        return uuid.uuid4().hex
-
     def is_done(self):
         if self.conn.exists(self.end_key):
             return True
-        keys = self._get_active_keys()
-        pipe = self.conn.pipeline()
-        try:
-            pipe.watch(*keys)
+        for _ in range(5):
+            keys = self._get_active_keys()
             active = sum_values(self.conn.mget(keys))
             if active > 0:
                 return False
 
             for stage in self.get_stages():
                 pending = self.conn.llen(stage.queue_key)
-                self.conn.set(self.conn.pending_key, pending)
+                self.conn.set(stage.pending_key, pending)
+        self.conn.set(self.end_key, pack_now())
+        return True
 
-            pipe.set(self.end_key, pack_now())
-            pipe.execute()
-            return True
-        except WatchError:
-            return False
-    
     def _create(self, pipe):
         pipe.sadd(self.dataset.jobs_key, self.id)
         pipe.setnx(self.start_key, pack_now())
 
     def _remove(self, pipe):
-        for stage in self.dataset.get_stages():
-            self.get_stage(stage)._remove(pipe)
+        for stage in self.get_stages():
+            stage._remove(pipe)
         pipe.srem(self.dataset.jobs_key, self.id)
         pipe.delete(self.start_key)
         pipe.expire(self.end_key, REDIS_EXPIRE)
@@ -134,12 +124,20 @@ class Job(object):
         status['start_time'] = start
         status['end_time'] = end
         for stage in self.get_stages():
-            status = stage.get_status()
-            status['stages'].append(status)
-            status['finished'] += status['finished']
-            status['running'] += status['running']
-            status['pending'] += status['pending']
+            progress = stage.get_status()
+            status['stages'].append(progress)
+            status['finished'] += progress['finished']
+            status['running'] += progress['running']
+            status['pending'] += progress['pending']
         return status
+
+    @classmethod
+    def random_id(cls):
+        return uuid.uuid4().hex
+
+    @classmethod
+    def create(cls, conn, dataset):
+        return cls(conn, dataset=dataset, job_id=Job.random_id())
 
 
 class Stage(object):
@@ -156,6 +154,7 @@ class Stage(object):
         self.finished_key = make_key(self.queue_key, 'finished')
 
     def _create(self, pipe):
+        pipe.sadd(self.stages_key, self.queue_key)
         pipe.sadd(self.job.dataset.stages_key, self.stage)
         self.job._create(pipe)
 
@@ -171,12 +170,15 @@ class Stage(object):
         pipe.decr(self.pending_key, amount=count)
         pipe.incr(self.running_key, amount=count)
         pipe.execute()
-
+        
     def mark_done(self, count=1):
         pipe = self.conn.pipeline()
         pipe.decr(self.running_key, amount=count)
         pipe.incr(self.finished_key, amount=count)
         pipe.execute()
+
+    def report_finished(self, count=1):
+        self.conn.incr(self.finished_key, amount=count)
 
     def queue(self, payload={}, context={}):
         if self.conn.exists(self.job.end_key):
@@ -187,7 +189,7 @@ class Stage(object):
         pipe = self.conn.pipeline()
         self._create(pipe)
         pipe.rpush(self.queue_key, data)
-        pipe.incr(self.pending_key, amount=1)
+        pipe.incr(self.pending_key)
         pipe.execute()
         return task
 
@@ -211,9 +213,9 @@ class Stage(object):
         return {
             'job_id': self.job.id,
             'stage': self.stage,
-            'pending': max(0, int(pending or 0)),
-            'running': max(0, int(running or 0)),
-            'finished': max(0, int(finished or 0)),
+            'pending': max(0, unpack_int(pending)),
+            'running': max(0, unpack_int(running)),
+            'finished': max(0, unpack_int(finished)),
         }
 
     @classmethod
@@ -232,7 +234,7 @@ class Stage(object):
         return queues
 
     @classmethod
-    def get_stage_task(cls, conn, stages, timeout=0):
+    def get_task(cls, conn, stages, timeout=0):
         """Retrieve a single task from the highest-priority queue that has
         work pending."""
         try:
@@ -248,8 +250,9 @@ class Stage(object):
                         break
             else:
                 task_data = conn.blpop(queues, timeout=timeout)
-                if task_data is not None:
-                    _, task_data = task_data
+                if task_data is None:
+                    return None
+                _, task_data = task_data
 
             task = Task.unpack(conn, task_data)
             # TODO: can this be atomic?
@@ -275,8 +278,8 @@ class Task(object):
         return dump_json({
             'context': self.context or {},
             'payload': self.payload,
-            'dataset': self.stage.dataset.name,
-            'job_id': self.job.id,
+            'dataset': self.job.dataset.name,
+            'job': self.job.id,
             'stage': self.stage.stage
         })
 
@@ -285,6 +288,6 @@ class Task(object):
         if data is None:
             return None
         data = load_json(data)
-        job = Job(conn, data.get('dataset'), data.get('job_id'))
+        job = Job(conn, data.get('dataset'), data.get('job'))
         stage = job.get_stage(data.get('stage'))
         return Task(stage, data.get('payload'), data.get('context'))
