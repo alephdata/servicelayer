@@ -4,7 +4,7 @@ from threading import Thread
 from abc import ABC, abstractmethod
 
 from servicelayer import settings
-from servicelayer.jobs import JobStage
+from servicelayer.jobs import Job, Stage
 from servicelayer.cache import get_redis
 
 log = logging.getLogger(__name__)
@@ -34,8 +34,6 @@ class Worker(ABC):
             raise
         finally:
             task.done()
-            if task.job.is_done():
-                task.stage.sync()
             self.after_task(task)
 
     def init_internal(self):
@@ -47,14 +45,13 @@ class Worker(ABC):
         if retries < settings.WORKER_RETRY:
             log.warning("Queue failed task for re-try...")
             task.context['retries'] = retries + 1
-            task.stage.queue_task(task)
+            task.stage.queue(task.payload, task.context)
 
     def process(self):
         while True:
             self.periodic()
-            task = JobStage.get_stage_task(self.conn,
-                                           self.get_stages(),
-                                           timeout=5)
+            stages = self.get_stages()
+            task = Stage.get_task(self.conn, stages, timeout=5)
             if task is None:
                 continue
             if self._shutdown:
@@ -69,9 +66,8 @@ class Worker(ABC):
         go into an infinte loop waiting for new ones."""
         self.init_internal()
         while True:
-            task = JobStage.get_stage_task(self.conn,
-                                           self.get_stages(),
-                                           timeout=1)
+            stages = self.get_stages()
+            task = Stage.get_task(self.conn, stages, timeout=1)
             if task is None:
                 return
             self.handle_safe(task)
