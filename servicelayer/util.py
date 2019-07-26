@@ -3,6 +3,7 @@ import random
 import logging
 from datetime import datetime, date
 import json
+from banal import ensure_list
 from banal.dicts import clean_dict
 
 
@@ -20,6 +21,11 @@ def backoff(failures=0):
 def service_retries():
     """A default number of tries to re-try an external service."""
     return range(30)
+
+
+def sum_values(values):
+    values = [unpack_int(v) for v in ensure_list(values)]
+    return sum(values)
 
 
 def unpack_int(value):
