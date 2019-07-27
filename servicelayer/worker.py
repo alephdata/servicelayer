@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from servicelayer import settings
 from servicelayer.jobs import Job, Stage
 from servicelayer.cache import get_redis
+from servicelayer.util import unpack_int
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ class Worker(ABC):
         self.boot()
 
     def retry(self, task):
-        retries = int(task.context.get('retries', 0))
+        retries = unpack_int(task.context.get('retries'))
         if retries < settings.WORKER_RETRY:
             log.warning("Queue failed task for re-try...")
             task.context['retries'] = retries + 1
