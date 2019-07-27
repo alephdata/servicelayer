@@ -90,11 +90,12 @@ class Job(object):
             for stage in self.get_stages():
                 pending = self.conn.llen(stage.queue_key)
                 self.conn.set(stage.pending_key, pending)
-        self.conn.set(self.end_key, pack_now())
+        self.conn.setnx(self.end_key, pack_now())
         return True
 
     def _create(self, pipe):
         pipe.sadd(self.dataset.jobs_key, self.id)
+        pipe.delete(self.end_key)
         pipe.setnx(self.start_key, pack_now())
 
     def _remove(self, pipe):
@@ -102,6 +103,7 @@ class Job(object):
             stage._remove(pipe)
         pipe.srem(self.dataset.jobs_key, self.id)
         pipe.delete(self.start_key)
+        pipe.setnx(self.end_key, pack_now())
         pipe.expire(self.end_key, REDIS_EXPIRE)
 
     def remove(self):
@@ -167,7 +169,6 @@ class Stage(object):
     def _check_out(self, count=1):
         pipe = self.conn.pipeline()
         self._create(pipe)
-        pipe.delete(self.job.end_key)
         pipe.decr(self.pending_key, amount=count)
         pipe.incr(self.running_key, amount=count)
         pipe.execute()
@@ -189,7 +190,6 @@ class Stage(object):
         task = Task(self, payload, context)
         data = task.serialize()
         pipe = self.conn.pipeline()
-        pipe.delete(self.job.end_key)
         self._create(pipe)
         pipe.rpush(self.queue_key, data)
         pipe.incr(self.pending_key)
