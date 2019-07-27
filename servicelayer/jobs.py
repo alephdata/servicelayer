@@ -167,6 +167,7 @@ class Stage(object):
                     self.running_key, self.finished_key)
 
     def _check_out(self, count=1):
+        """Check out tasks and mark them as running."""
         pipe = self.conn.pipeline()
         self._create(pipe)
         pipe.decr(self.pending_key, amount=count)
@@ -174,6 +175,7 @@ class Stage(object):
         pipe.execute()
         
     def mark_done(self, count=1):
+        """Returns tasks previously checked out and mark as done."""
         pipe = self.conn.pipeline()
         self._create(pipe)
         pipe.decr(self.running_key, amount=count)
@@ -181,6 +183,7 @@ class Stage(object):
         pipe.execute()
 
     def report_finished(self, count=1):
+        """Inflate the number of finished tasks."""
         pipe = self.conn.pipeline()
         self._create(pipe)
         pipe.incr(self.finished_key, amount=count)
