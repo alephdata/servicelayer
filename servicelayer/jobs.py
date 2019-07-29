@@ -4,7 +4,7 @@ import logging
 import uuid
 from banal import ensure_list
 
-from redis.exceptions import BusyLoadingError, WatchError
+from redis.exceptions import BusyLoadingError
 
 from servicelayer.settings import REDIS_EXPIRE
 from servicelayer.settings import REDIS_PREFIX as PREFIX
@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 
 
 class Dataset(object):
-    
+
     def __init__(self, conn, name):
         self.conn = conn
         self.name = name
@@ -30,7 +30,7 @@ class Dataset(object):
         pipe.delete(self.stages_key)
         pipe.delete(self.jobs_key)
         pipe.execute()
-    
+
     def get_stages(self):
         return self.conn.smembers(self.stages_key)
 
@@ -173,7 +173,7 @@ class Stage(object):
         pipe.decr(self.pending_key, amount=count)
         pipe.incr(self.running_key, amount=count)
         pipe.execute()
-        
+
     def mark_done(self, count=1):
         """Returns tasks previously checked out and mark as done."""
         pipe = self.conn.pipeline()
@@ -211,7 +211,7 @@ class Stage(object):
         # TODO: can this be atomic?
         self._check_out(len(tasks))
         return tasks
-    
+
     def get_status(self):
         """Get the current status."""
         keys = (self.pending_key, self.running_key, self.finished_key)

@@ -4,7 +4,7 @@ from threading import Thread
 from abc import ABC, abstractmethod
 
 from servicelayer import settings
-from servicelayer.jobs import Job, Stage
+from servicelayer.jobs import Stage
 from servicelayer.cache import get_redis
 from servicelayer.util import unpack_int
 
