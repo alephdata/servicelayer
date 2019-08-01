@@ -23,11 +23,11 @@ setup(
     include_package_data=True,
     zip_safe=True,
     install_requires=[
-        'banal',
+        'banal >= 0.4.2',
         'six >= 1.12.0',
         'normality >= 1.0.0',
         'redis == 3.2.1',
-        'fakeredis >= 1.0.3',
+        'fakeredis == 1.0.3',
     ],
     extras_require={
         'amazon': [
