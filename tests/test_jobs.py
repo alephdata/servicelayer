@@ -1,7 +1,7 @@
 from unittest import TestCase
 
 from servicelayer.cache import get_fakeredis
-from servicelayer.jobs import Job, Stage, Task
+from servicelayer.jobs import Job, Stage, Task, Dataset
 
 
 class ProcessTest(TestCase):
@@ -83,3 +83,17 @@ class ProcessTest(TestCase):
         assert tasks[0].payload == {'test': 'foo'}
         assert tasks[1].payload == {'test': 'bar'}
         job.dataset.cancel()
+
+    def test_active_dataset_status(self):
+        job = Job.create(self.conn, self.dataset)
+        stage = job.get_stage(Stage.INGEST)
+        stage.queue({'test': 'foo'}, {})
+        stage.queue({'test': 'bar'}, {})
+        status = Dataset.get_active_dataset_status(self.conn)
+        assert len(status['datasets']) == 1
+        assert status['total'] == 1
+        assert status['datasets']['test_1']['pending'] == 2
+        job.dataset.cancel()
+        status = Dataset.get_active_dataset_status(self.conn)
+        assert status['datasets'] == {}
+        assert status['total'] == 0

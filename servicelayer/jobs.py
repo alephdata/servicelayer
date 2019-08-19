@@ -61,6 +61,16 @@ class Dataset(object):
             return name
         return cls(conn, name)
 
+    @classmethod
+    def get_active_dataset_status(cls, conn):
+        result = {'total': 0, 'datasets': {}}
+        for key in conn.scan_iter(make_key(PREFIX, 'qdj', '*')):
+            name = key.split(':')[-1]
+            status = cls(conn, name).get_status()
+            result['total'] += 1
+            result['datasets'][name] = status
+        return result
+
 
 class Job(object):
 
