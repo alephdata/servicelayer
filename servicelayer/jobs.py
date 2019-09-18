@@ -20,8 +20,9 @@ class Dataset(object):
     def __init__(self, conn, name):
         self.conn = conn
         self.name = name
-        self.stages_key = make_key(PREFIX, 'qds', name)
+        self.key = make_key(PREFIX, 'qdatasets')
         self.jobs_key = make_key(PREFIX, 'qdj', name)
+        self.stages_key = make_key(PREFIX, 'qds', name)
 
     def cancel(self):
         pipe = self.conn.pipeline()
@@ -64,9 +65,8 @@ class Dataset(object):
     @classmethod
     def get_active_dataset_status(cls, conn):
         result = {'total': 0, 'datasets': {}}
-        active_jobs_key = make_key(PREFIX, 'qdja')
-        for key in conn.smembers(active_jobs_key):
-            name = key.split(':')[0]
+        datasets_key = make_key(PREFIX, 'qdatasets')
+        for name in conn.smembers(datasets_key):
             status = cls(conn, name).get_status()
             result['total'] += 1
             result['datasets'][name] = status
@@ -106,6 +106,7 @@ class Job(object):
         return True
 
     def _create(self, pipe):
+        pipe.sadd(self.dataset.key, self.dataset.name)
         pipe.sadd(self.dataset.jobs_key, self.id)
         pipe.sadd(self.active_jobs_key, make_key(self.dataset.name, self.id))
         pipe.delete(self.end_key)
@@ -114,6 +115,7 @@ class Job(object):
     def _remove(self, pipe):
         for stage in self.get_stages():
             stage._remove(pipe)
+        pipe.srem(self.dataset.key, self.dataset.name)
         pipe.srem(self.dataset.jobs_key, self.id)
         pipe.srem(self.active_jobs_key, make_key(self.dataset.name, self.id))
         pipe.delete(self.start_key)
