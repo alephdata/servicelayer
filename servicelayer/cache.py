@@ -45,6 +45,11 @@ def wait_for_redis(conn):
 
 def make_key(*criteria):
     """Make a string key out of many criteria."""
-    criteria = [c or '' for c in criteria]
-    criteria = [str(c) for c in criteria]
-    return ':'.join(criteria)
+    parts = []
+    for criterion in criteria:
+        if criterion is None:
+            continue
+        criterion = str(criterion)
+        criterion = criterion.replace(':', '#')
+        parts.append(criterion)
+    return ':'.join(parts)
