@@ -64,8 +64,9 @@ class Dataset(object):
     @classmethod
     def get_active_dataset_status(cls, conn):
         result = {'total': 0, 'datasets': {}}
-        for key in conn.scan_iter(make_key(PREFIX, 'qdj', '*')):
-            name = key.split(':')[-1]
+        active_jobs_key = make_key(PREFIX, 'qdja')
+        for key in conn.smembers(active_jobs_key):
+            name = key.split(':')[0]
             status = cls(conn, name).get_status()
             result['total'] += 1
             result['datasets'][name] = status
@@ -80,6 +81,7 @@ class Job(object):
         self.dataset = Dataset.ensure(conn, dataset)
         self.start_key = make_key(PREFIX, 'qd', self.id, dataset, 'start')
         self.end_key = make_key(PREFIX, 'qd', self.id, dataset, 'end')
+        self.active_jobs_key = make_key(PREFIX, 'qdja')
 
     def get_stage(self, name):
         return Stage(self, name)
@@ -105,6 +107,7 @@ class Job(object):
 
     def _create(self, pipe):
         pipe.sadd(self.dataset.jobs_key, self.id)
+        pipe.sadd(self.active_jobs_key, make_key(self.dataset.name, self.id))
         pipe.delete(self.end_key)
         pipe.setnx(self.start_key, pack_now())
 
@@ -112,6 +115,7 @@ class Job(object):
         for stage in self.get_stages():
             stage._remove(pipe)
         pipe.srem(self.dataset.jobs_key, self.id)
+        pipe.srem(self.active_jobs_key, make_key(self.dataset.name, self.id))
         pipe.delete(self.start_key)
         pipe.setnx(self.end_key, pack_now())
         pipe.expire(self.end_key, REDIS_EXPIRE)
