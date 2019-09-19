@@ -5,13 +5,15 @@ from google.cloud.storage import Blob
 from google.cloud.storage.client import Client
 from google.api_core.exceptions import TooManyRequests, InternalServerError
 from google.api_core.exceptions import ServiceUnavailable
+from google.resumable_media.common import DataCorruption
 
 from servicelayer.archive.virtual import VirtualArchive
 from servicelayer.archive.util import checksum, ensure_path
 from servicelayer.util import service_retries, backoff
 
 log = logging.getLogger(__name__)
-FAILURES = (TooManyRequests, InternalServerError, ServiceUnavailable,)
+FAILURES = (TooManyRequests, InternalServerError, ServiceUnavailable,
+            DataCorruption)
 
 
 class GoogleStorageArchive(VirtualArchive):
@@ -76,29 +78,37 @@ class GoogleStorageArchive(VirtualArchive):
         if content_hash is None:
             return
 
-        blob = self._locate_blob(content_hash)
-        if blob is not None:
-            return content_hash
-
         for attempt in service_retries():
             try:
+                blob = self._locate_blob(content_hash)
+                if blob is not None:
+                    return content_hash
+
                 path = os.path.join(self._get_prefix(content_hash), 'data')
                 blob = Blob(path, self.bucket)
                 with open(file_path, 'rb') as fh:
                     blob.upload_from_file(fh, content_type=mime_type)
                 return content_hash
             except FAILURES as exc:
-                log.error("GS error: %s", exc)
+                log.error("Store error: %s", exc)
                 backoff(failures=attempt)
 
     def load_file(self, content_hash, file_name=None, temp_path=None):
         """Retrieve a file from Google storage and put it onto the local file
         system for further processing."""
-        blob = self._locate_blob(content_hash)
-        if blob is not None:
-            path = self._local_path(content_hash, file_name, temp_path)
-            blob.download_to_filename(path)
-            return path
+        for attempt in service_retries():
+            try:
+                blob = self._locate_blob(content_hash)
+                if blob is not None:
+                    path = self._local_path(content_hash, file_name, temp_path)
+                    blob.download_to_filename(path)
+                    return path
+            except FAILURES as exc:
+                log.error("Load error: %s", exc)
+                backoff(failures=attempt)
+
+        # Returns None for "persistent error" as well as "file not found" :/
+        log.debug("[%s] not found, or the backend is down.", content_hash)
 
     def generate_url(self, content_hash, file_name=None, mime_type=None):
         blob = self._locate_blob(content_hash)
