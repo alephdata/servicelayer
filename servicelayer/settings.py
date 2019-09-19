@@ -13,13 +13,6 @@ WORKER_RETRY = env.to_int('WORKER_RETRY', 3)
 WORKER_THREADS = min(8, multiprocessing.cpu_count())
 WORKER_THREADS = env.to_int('WORKER_THREADS', WORKER_THREADS)
 
-# Aleph client API settings
-ALEPH_HOST = env.get('MEMORIOUS_ALEPH_HOST')
-ALEPH_HOST = env.get('ALEPH_HOST', ALEPH_HOST)
-
-ALEPH_API_KEY = env.get('MEMORIOUS_ALEPH_API_KEY')
-ALEPH_API_KEY = env.get('ALEPH_API_KEY', ALEPH_API_KEY)
-
 # Amazon client credentials
 AWS_KEY_ID = env.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_KEY = env.get('AWS_SECRET_ACCESS_KEY')
