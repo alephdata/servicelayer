@@ -50,17 +50,14 @@ class Worker(ABC):
 
     def process(self):
         while True:
+            if self._shutdown:
+                return
             self.periodic()
             stages = self.get_stages()
             task = Stage.get_task(self.conn, stages, timeout=5)
             if task is None:
                 continue
-            if self._shutdown:
-                self.retry(task)
-                return
             self.handle_safe(task)
-            if self._shutdown:
-                return
 
     def sync(self):
         """Process only the tasks already in the job queue, but do not
