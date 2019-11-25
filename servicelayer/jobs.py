@@ -16,6 +16,8 @@ log = logging.getLogger(__name__)
 
 
 class Dataset(object):
+    """A subdivision of tasks. Each dataset can have multiple stages
+    of processing and jobs that control processing instances."""
 
     def __init__(self, conn, name):
         self.conn = conn
@@ -262,6 +264,10 @@ class Stage(object):
         try:
             queues = cls._get_queues(conn, stages)
             if not len(queues):
+                # Avoid going into a tight loop when there are no tasks:
+                # cf. https://github.com/alephdata/aleph/issues/867
+                if timeout is not None:
+                    time.sleep(max(10, timeout or 1))
                 return None
             # Support a magic value to not block, i.e. timeout None
             if timeout is None:
