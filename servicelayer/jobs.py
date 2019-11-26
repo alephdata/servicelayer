@@ -276,6 +276,8 @@ class Stage(object):
                     task_data = conn.lpop(queue)
                     if task_data is not None:
                         break
+                if task_data is None:
+                    return None
             else:
                 task_data = conn.blpop(queues, timeout=timeout)
                 if task_data is None:

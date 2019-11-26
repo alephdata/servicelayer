@@ -48,13 +48,13 @@ class Worker(ABC):
             task.context['retries'] = retries + 1
             task.stage.queue(task.payload, task.context)
 
-    def process(self):
+    def process(self, interval=5):
         while True:
             if self._shutdown:
                 return
             self.periodic()
             stages = self.get_stages()
-            task = Stage.get_task(self.conn, stages, timeout=5)
+            task = Stage.get_task(self.conn, stages, timeout=interval)
             if task is None:
                 continue
             self.handle_safe(task)
@@ -65,7 +65,7 @@ class Worker(ABC):
         self.init_internal()
         while True:
             stages = self.get_stages()
-            task = Stage.get_task(self.conn, stages, timeout=1)
+            task = Stage.get_task(self.conn, stages, timeout=None)
             if task is None:
                 return
             self.handle_safe(task)
