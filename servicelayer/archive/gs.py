@@ -5,15 +5,15 @@ from google.cloud.storage import Blob
 from google.cloud.storage.client import Client
 from google.api_core.exceptions import TooManyRequests, InternalServerError
 from google.api_core.exceptions import ServiceUnavailable
-from google.resumable_media.common import DataCorruption
+from google.resumable_media.common import DataCorruption, InvalidResponse
 
 from servicelayer.archive.virtual import VirtualArchive
-from servicelayer.archive.util import checksum, ensure_path
+from servicelayer.archive.util import checksum, ensure_path, ensure_posix_path
 from servicelayer.util import service_retries, backoff
 
 log = logging.getLogger(__name__)
 FAILURES = (TooManyRequests, InternalServerError, ServiceUnavailable,
-            DataCorruption)
+            DataCorruption, InvalidResponse)
 
 
 class GoogleStorageArchive(VirtualArchive):
@@ -61,7 +61,7 @@ class GoogleStorageArchive(VirtualArchive):
 
         # First, check the standard file name:
         blob = Blob(os.path.join(prefix, 'data'), self.bucket)
-        if blob.exists(self.client):
+        if blob.exists():
             return blob
 
         # Second, iterate over all file names:
@@ -78,6 +78,7 @@ class GoogleStorageArchive(VirtualArchive):
         if content_hash is None:
             return
 
+        file_path = ensure_posix_path(file_path)
         for attempt in service_retries():
             try:
                 blob = self._locate_blob(content_hash)
@@ -86,8 +87,7 @@ class GoogleStorageArchive(VirtualArchive):
 
                 path = os.path.join(self._get_prefix(content_hash), 'data')
                 blob = Blob(path, self.bucket)
-                with open(file_path, 'rb') as fh:
-                    blob.upload_from_file(fh, content_type=mime_type)
+                blob.upload_from_filename(file_path, content_type=mime_type)
                 return content_hash
             except FAILURES as exc:
                 log.error("Store error: %s", exc)

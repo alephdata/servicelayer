@@ -10,6 +10,12 @@ def ensure_path(file_path):
     return Path(file_path).resolve()
 
 
+def ensure_posix_path(file_path):
+    if isinstance(file_path, Path):
+        file_path = file_path.as_posix()
+    return file_path
+
+
 def checksum(file_name):
     """Generate a hash for a given file name."""
     file_name = ensure_path(file_name)
