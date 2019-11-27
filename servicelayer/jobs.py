@@ -218,7 +218,10 @@ class Stage(object):
         return task
 
     def get_tasks(self, limit=100):
-        assert limit > 0
+        """Get multiple tasks at once, without blocking. This is used
+        inside the consumer applications to process multiple tasks of
+        the same type at once."""
+        limit = max(limit or 1, 1)
         pipe = self.conn.pipeline()
         pipe.lrange(self.queue_key, 0, limit - 1)
         pipe.ltrim(self.queue_key, limit, -1)
