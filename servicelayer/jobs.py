@@ -65,13 +65,18 @@ class Dataset(object):
         return cls(conn, name)
 
     @classmethod
-    def get_active_dataset_status(cls, conn):
-        result = {'total': 0, 'datasets': {}}
+    def get_active_datasets(cls, conn):
         datasets_key = make_key(PREFIX, 'qdatasets')
         for name in conn.smembers(datasets_key):
-            status = cls(conn, name).get_status()
+            yield cls(conn, name)
+
+    @classmethod
+    def get_active_dataset_status(cls, conn):
+        result = {'total': 0, 'datasets': {}}
+        for dataset in cls.get_active_datasets(conn):
+            status = dataset.get_status()
             result['total'] += 1
-            result['datasets'][name] = status
+            result['datasets'][dataset.name] = status
         return result
 
 
@@ -217,11 +222,16 @@ class Stage(object):
         pipe.execute()
         return task
 
+    def sync(self):
+        pending = self.conn.llen(self.queue_key)
+        self.conn.set(self.pending_key, pending)
+
     def get_tasks(self, limit=100):
         """Get multiple tasks at once, without blocking. This is used
         inside the consumer applications to process multiple tasks of
         the same type at once."""
-        limit = max(limit or 1, 1)
+        if limit is None or limit < 1:
+            return []
         pipe = self.conn.pipeline()
         pipe.lrange(self.queue_key, 0, limit - 1)
         pipe.ltrim(self.queue_key, limit, -1)
