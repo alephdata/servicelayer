@@ -81,16 +81,16 @@ class GoogleStorageArchive(VirtualArchive):
         file_path = ensure_posix_path(file_path)
         for attempt in service_retries():
             try:
-                blob = self._locate_blob(content_hash)
-                if blob is not None:
-                    return content_hash
+                # blob = self._locate_blob(content_hash)
+                # if blob is not None:
+                #     return content_hash
 
                 path = os.path.join(self._get_prefix(content_hash), 'data')
                 blob = Blob(path, self.bucket)
                 blob.upload_from_filename(file_path, content_type=mime_type)
                 return content_hash
-            except FAILURES as exc:
-                log.error("Store error: %s", exc)
+            except FAILURES:
+                log.exception("Store error in GS")
                 backoff(failures=attempt)
 
     def load_file(self, content_hash, file_name=None, temp_path=None):
@@ -103,8 +103,8 @@ class GoogleStorageArchive(VirtualArchive):
                     path = self._local_path(content_hash, file_name, temp_path)
                     blob.download_to_filename(path)
                     return path
-            except FAILURES as exc:
-                log.error("Load error: %s", exc)
+            except FAILURES:
+                log.exception("Load error in GS")
                 backoff(failures=attempt)
 
         # Returns None for "persistent error" as well as "file not found" :/
