@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='servicelayer',
-    version='1.9.5',
+    version='1.9.6',
     description="Basic remote service functions for alephdata components",
     classifiers=[
         "Development Status :: 3 - Alpha",
