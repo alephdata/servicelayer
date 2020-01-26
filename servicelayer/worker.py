@@ -1,3 +1,4 @@
+import sys
 import signal
 import logging
 from threading import Thread
@@ -25,7 +26,7 @@ class Worker(ABC):
         log.warning("Shutting down worker.")
         self._shutdown = True
         if not self.num_threads:
-            raise SystemExit()
+            sys.exit(23)
 
     def handle_safe(self, task):
         try:
@@ -86,6 +87,7 @@ class Worker(ABC):
             threads.append(thread)
         for thread in threads:
             thread.join()
+        sys.exit(23)
 
     def get_stages(self):
         """Easily allow the user to make the active stages dynamic."""
