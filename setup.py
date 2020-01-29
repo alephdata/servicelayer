@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='servicelayer',
-    version='1.9.7',
+    version='version='1.9.7'',
     description="Basic remote service functions for alephdata components",
     classifiers=[
         "Development Status :: 3 - Alpha",
@@ -31,7 +31,7 @@ setup(
     ],
     extras_require={
         'amazon': [
-            'boto3 >= 1.9.71',
+            'boto3 >= version='1.9.7'1',
         ],
         'google': [
             'google-cloud-storage >= 1.10.0',
@@ -39,7 +39,7 @@ setup(
         'dev': [
             'twine',
             'moto',
-            'boto3 >= 1.9.71',
+            'boto3 >= version='1.9.7'1',
             'pytest >= 3.6',
             'coverage',
             'pytest-cov',
