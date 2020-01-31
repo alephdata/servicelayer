@@ -13,7 +13,7 @@ class ProcessTest(TestCase):
 
     def test_job_queue(self):
         job = Job.create(self.conn, self.dataset)
-        stage = job.get_stage(Stage.INGEST)
+        stage = job.get_stage('ingest')
         status = stage.get_status()
         assert status['pending'] == 0
         assert status['finished'] == 0
@@ -24,7 +24,7 @@ class ProcessTest(TestCase):
         assert status['finished'] == 0
         assert status['running'] == 0
         assert not job.is_done()
-        task = Stage.get_task(self.conn, Stage.INGEST,
+        task = Stage.get_task(self.conn, 'ingest',
                               timeout=None)
         assert task.job.dataset.name == job.dataset.name
         assert task.payload['test'] == 'foo'
@@ -42,7 +42,7 @@ class ProcessTest(TestCase):
 
     def test_queue_clear(self):
         job = Job.create(self.conn, self.dataset)
-        stage = job.get_stage(Stage.INGEST)
+        stage = job.get_stage('ingest')
 
         stage.queue({'test': 'foo'}, {})
         status = stage.get_status()
@@ -60,7 +60,7 @@ class ProcessTest(TestCase):
 
     def test_fake_finished(self):
         job = Job.create(self.conn, self.dataset)
-        stage = job.get_stage(Stage.INGEST)
+        stage = job.get_stage('ingest')
         status = stage.get_status()
         assert status['finished'] == 0
         stage.report_finished(500)
@@ -71,7 +71,7 @@ class ProcessTest(TestCase):
 
     def test_fetch_multiple_task(self):
         job = Job.create(self.conn, self.dataset)
-        stage = job.get_stage(Stage.INGEST)
+        stage = job.get_stage('ingest')
         stage.queue({'test': 'foo'}, {})
         stage.queue({'test': 'bar'}, {})
         status = job.get_status()
@@ -86,7 +86,7 @@ class ProcessTest(TestCase):
 
     def test_active_dataset_status(self):
         job = Job.create(self.conn, self.dataset)
-        stage = job.get_stage(Stage.INGEST)
+        stage = job.get_stage('ingest')
         stage.queue({'test': 'foo'}, {})
         stage.queue({'test': 'bar'}, {})
         status = Dataset.get_active_dataset_status(self.conn)
