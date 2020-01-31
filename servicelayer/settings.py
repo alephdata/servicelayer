@@ -24,5 +24,5 @@ ARCHIVE_PATH = env.get('ARCHIVE_PATH')
 
 # Logging
 LOGGING_LEVEL = env.get('LOGGING_LEVEL', 'DEBUG').upper()
-FORMAT = '[%(asctime)s] %(levelname)s:%(name)s:%(message)s'
-LOGGING_FORMAT = env.get('LOGGING_FORMAT', FORMAT)
+LOGGING_FORMAT = '%(levelname)s:%(name)s:%(message)s'
+LOGGING_FORMAT = env.get('LOGGING_FORMAT', LOGGING_FORMAT)
