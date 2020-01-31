@@ -166,7 +166,6 @@ class Job(object):
 
 
 class Stage(object):
-    INGEST = 'ingest'
 
     def __init__(self, job, stage):  # noqa
         self.job = job

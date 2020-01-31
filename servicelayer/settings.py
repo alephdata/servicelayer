@@ -10,7 +10,7 @@ REDIS_PREFIX = 'sla'
 
 # Worker
 WORKER_RETRY = env.to_int('WORKER_RETRY', 3)
-WORKER_THREADS = env.to_int('WORKER_THREADS', min(8, multiprocessing.cpu_count()))
+WORKER_THREADS = env.to_int('WORKER_THREADS', multiprocessing.cpu_count())
 
 # Amazon client credentials
 AWS_KEY_ID = env.get('AWS_ACCESS_KEY_ID')
@@ -24,4 +24,5 @@ ARCHIVE_PATH = env.get('ARCHIVE_PATH')
 
 # Logging
 LOGGING_LEVEL = env.get('LOGGING_LEVEL', 'DEBUG').upper()
-LOGGING_FORMAT = env.get('LOGGING_FORMAT', '[%(asctime)s] %(levelname)s:%(name)s:%(message)s')
+FORMAT = '[%(asctime)s] %(levelname)s:%(name)s:%(message)s'
+LOGGING_FORMAT = env.get('LOGGING_FORMAT', FORMAT)
