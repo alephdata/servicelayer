@@ -14,6 +14,10 @@ log = logging.getLogger(__name__)
 
 class Worker(ABC):
     """Workers of all microservices, unite!"""
+    task_reporting_enabled = False  # enable / disable task reporting per worker
+    TASK_START = 'start'
+    TASK_END = 'end'
+    TASK_ERROR = 'error'
 
     def __init__(self, conn=None, stages=None,
                  num_threads=settings.WORKER_THREADS):
@@ -29,14 +33,20 @@ class Worker(ABC):
             sys.exit(23)
 
     def handle_safe(self, task):
+        if self.should_report(task):
+            self.report_task(task, self.TASK_START)
         try:
             self.handle(task)
-        except (SystemExit, KeyboardInterrupt, Exception):
+        except (SystemExit, KeyboardInterrupt, Exception) as e:
+            if self.should_report(task):
+                self.report_task(task, self.TASK_ERROR, exception=e)
             self.retry(task)
             raise
         finally:
             task.done()
             self.after_task(task)
+            if self.should_report(task):
+                self.report_task(task, self.TASK_END)
 
     def init_internal(self):
         self._shutdown = False
@@ -104,6 +114,14 @@ class Worker(ABC):
     def after_task(self, task):
         """Optional hook excuted after handling a task"""
         pass
+
+    def should_report(self, task):
+        """logic to override on child workers to determine if the task should be reported"""
+        return self.task_reporting_enabled and task.context.get('report', False)
+
+    def report_task(self, task, lifecycle, exception=None):
+        """logic to override on child workers to enrich task reporting extra data or other stuff"""
+        task.report(lifecycle, exception)
 
     @abstractmethod
     def handle(self, task):

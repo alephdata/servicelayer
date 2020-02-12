@@ -2,7 +2,9 @@ import time
 import random
 import logging
 import uuid
+from datetime import datetime
 from banal import ensure_list
+from normality import stringify
 
 from redis.exceptions import BusyLoadingError
 
@@ -225,7 +227,7 @@ class Stage(object):
         pending = self.conn.llen(self.queue_key)
         self.conn.set(self.pending_key, pending)
 
-    def get_tasks(self, limit=100):
+    def get_tasks(self, limit=100, report=False):
         """Get multiple tasks at once, without blocking. This is used
         inside the consumer applications to process multiple tasks of
         the same type at once."""
@@ -237,7 +239,10 @@ class Stage(object):
         raw_tasks = pipe.execute()[0]
         tasks = []
         for task in raw_tasks:
-            tasks.append(Task.unpack(self.conn, task))
+            task = Task.unpack(self.conn, task)
+            tasks.append(task)
+            if report:
+                task.report()
         # TODO: can this be atomic?
         self._check_out(len(tasks))
         return tasks
@@ -306,6 +311,7 @@ class Stage(object):
 
 
 class Task(object):
+    OP_REPORT = 'report'
 
     def __init__(self, stage, payload, context):
         self.payload = payload
@@ -324,6 +330,26 @@ class Task(object):
             'job': self.job.id,
             'stage': self.stage.stage
         })
+
+    def report(self, lifecycle='start', exception=None, stage=None, **extra):
+        """queue a new task to report status about this task"""
+        payload = {**{
+            'job': self.job.id,
+            '%s_at' % lifecycle: datetime.now(),
+            'stage': stage or self.stage.stage,
+            'status': lifecycle,
+            'dataset': self.job.dataset.name,
+            'original_dump': self.serialize()
+        }, **self.context.get('report_extra_data', {}), **extra}
+        if exception is not None:
+            payload.update({
+                'status': 'error',
+                'has_error': True,
+                'error_name': exception.__class__.__name__,
+                'error_msg': stringify(exception)
+            })
+        stage = self.job.get_stage(self.OP_REPORT)
+        stage.queue(payload)
 
     @classmethod
     def unpack(cls, conn, data):
