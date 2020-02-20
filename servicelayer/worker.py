@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 
 from servicelayer import settings
 from servicelayer.jobs import Stage
+from servicelayer.task_reporting import TaskReporter
 from servicelayer.cache import get_redis
 from servicelayer.util import unpack_int
 
@@ -14,10 +15,10 @@ log = logging.getLogger(__name__)
 
 class Worker(ABC):
     """Workers of all microservices, unite!"""
-    task_reporting_enabled = False  # enable / disable task reporting per worker
     TASK_START = 'start'
     TASK_END = 'end'
     TASK_ERROR = 'error'
+    reporter = TaskReporter(conn=get_redis())
 
     def __init__(self, conn=None, stages=None,
                  num_threads=settings.WORKER_THREADS):
@@ -33,20 +34,22 @@ class Worker(ABC):
             sys.exit(23)
 
     def handle_safe(self, task):
+        reporter = None
         if self.should_report(task):
-            self.report_task(task, self.TASK_START)
+            reporter = self.get_task_reporter(task)
+            reporter.start()
         try:
             self.handle(task)
         except (SystemExit, KeyboardInterrupt, Exception) as e:
-            if self.should_report(task):
-                self.report_task(task, self.TASK_ERROR, exception=e)
+            if reporter:
+                reporter.error(exception=e)
             self.retry(task)
             raise
         finally:
             task.done()
             self.after_task(task)
-            if self.should_report(task):
-                self.report_task(task, self.TASK_END)
+            if reporter:
+                reporter.end()
 
     def init_internal(self):
         self._shutdown = False
@@ -117,11 +120,10 @@ class Worker(ABC):
 
     def should_report(self, task):
         """logic to override on child workers to determine if the task should be reported"""
-        return self.task_reporting_enabled and task.context.get('report', False)
+        return task.context.get('reporter', False)
 
-    def report_task(self, task, lifecycle, exception=None):
-        """logic to override on child workers to enrich task reporting extra data or other stuff"""
-        task.report(lifecycle, exception)
+    def get_task_reporter(self, task):
+        return self.reporter.from_data(task.context['reporter'], task=task)
 
     @abstractmethod
     def handle(self, task):
