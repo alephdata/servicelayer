@@ -79,9 +79,10 @@ class TaskReporter:
             status=status,
             operation=operation,
             dataset=task.job.dataset.name,
-            task=task.serialize(),
             **extra
         )
+        if task.context:
+            payload.update(**task.context.get('report_payload', {}))
         stage = task.job.get_stage(OP_REPORT)
         stage.queue(payload)
 
