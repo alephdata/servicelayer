@@ -3,33 +3,20 @@ from datetime import datetime
 from normality import stringify
 
 from servicelayer.jobs import Task
+from servicelayer.settings import WORKER_REPORTING_DISABLED
 from servicelayer.util import dump_json
 
 
-class Base:
+OP_REPORT = 'report'
+
+
+class Status:
     START = 'start'
     END = 'end'
     ERROR = 'error'
-    OP_REPORT = 'report'
 
 
-class Handler(Base):
-    def __init__(self, handle, *args, **kwargs):
-        self.handle = handle
-        self.args = args
-        self.kwargs = kwargs
-
-    def start(self, **kwargs):
-        return self.handle(status=self.START, *self.args, **{**self.kwargs, **kwargs})
-
-    def end(self, **kwargs):
-        return self.handle(status=self.END, *self.args, **{**self.kwargs, **kwargs})
-
-    def error(self, **kwargs):
-        return self.handle(status=self.ERROR, *self.args, **{**self.kwargs, **kwargs})
-
-
-class TaskReporter(Base):
+class TaskReporter:
     def __init__(
             self,
             conn,
@@ -48,23 +35,16 @@ class TaskReporter(Base):
         self.status = status
         self.clean_payload = clean_payload
         self.defaults = defaults
-        self.handler = self.get_handler()
+        self.reporting_enabled = not WORKER_REPORTING_DISABLED
 
-    def start(self, **kwargs):
-        self.handler.start(**kwargs)
+    def start(self, **data):
+        self.handle(status=Status.START, **data)
 
-    def end(self, **kwargs):
-        self.handler.end(**kwargs)
+    def end(self, **data):
+        self.handle(status=Status.END, **data)
 
-    def error(self, exception, **kwargs):
-        self.handler.error(exception=exception, **kwargs)
-
-    def set(self, **data):
-        for k, v in data.items():
-            if hasattr(self, k):
-                setattr(self, k, v)
-            else:
-                self.defaults[k] = v
+    def error(self, exception, **data):
+        self.handle(status=Status.ERROR, exception=exception, **data)
 
     def get_report_data(self, job, status, stage, dataset, dump=None, **extra):
         now = datetime.now()
@@ -85,9 +65,18 @@ class TaskReporter(Base):
                 'error_name': exception.__class__.__name__,
                 'error_msg': stringify(exception)
             })
+        if self.clean_payload:
+            return self.clean_payload(data)
         return data
 
-    def task_handler(self, task, **extra):
+    def handle(self, **data):
+        if self.reporting_enabled:
+            if self.task:
+                self._handle_task(self.task, **data)
+            else:
+                self._handle_data(self.stage, self.dataset, self.job, **data)
+
+    def _handle_task(self, task, **extra):
         """queue a new reporting task based on given `task`"""
         status = extra.pop('status')
         stage = extra.pop('stage', None)
@@ -99,37 +88,20 @@ class TaskReporter(Base):
             dump=task.serialize(),
             **extra
         )
-        if self.clean_payload:
-            payload = self.clean_payload(payload)
-        stage = task.job.get_stage(self.OP_REPORT)
+        stage = task.job.get_stage(OP_REPORT)
         stage.queue(payload)
 
-    def data_handler(self, stage, dataset, job, **data):
+    def _handle_data(self, stage, dataset, job, **data):
         """queue a new reporting task based on `data`"""
-        task = self._create_proxy_task(stage, dataset, job)
-        self.task_handler(task, **data)
-
-    def get_handler(self):
-        if self.task:
-            return Handler(self.task_handler, task=self.task)
-        return Handler(self.data_handler, self.stage, self.dataset, self.job)
-
-    def _create_proxy_task(self, stage, dataset, job):
-        return Task.unpack(self.conn, dump_json({
+        task = Task.unpack(self.conn, dump_json({
             'stage': stage,
             'dataset': dataset,
             'job': job
         }))
+        self._handle_task(task, **data)
 
-    def serialize(self, **defaults):
-        data = {**{
-            'job': self.job,
-            'stage': self.stage,
-            'dataset': self.dataset
-        }, **{**self.defaults, **defaults}}
-        # FIXME
-        data.pop('ns', None)
-        return data
+    def from_task(self, task):
+        return TaskReporter(conn=self.conn, task=task)
 
     def copy(self, **data):
         """return a new reporter with updated data"""
@@ -142,7 +114,3 @@ class TaskReporter(Base):
             'clean_payload': self.clean_payload
         }
         return TaskReporter(self.conn, **{**base, **self.defaults, **data})
-
-    def from_data(self, data, **extra):
-        """load a reporter from serialized data"""
-        return TaskReporter(self.conn, **{**self.defaults, **data, **extra})

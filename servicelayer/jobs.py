@@ -225,7 +225,7 @@ class Stage(object):
         pending = self.conn.llen(self.queue_key)
         self.conn.set(self.pending_key, pending)
 
-    def get_tasks(self, limit=100, reporter=False):
+    def get_tasks(self, limit=100):
         """Get multiple tasks at once, without blocking. This is used
         inside the consumer applications to process multiple tasks of
         the same type at once."""
@@ -239,9 +239,6 @@ class Stage(object):
         for task in raw_tasks:
             task = Task.unpack(self.conn, task)
             tasks.append(task)
-            if reporter:
-                reporter.set(task=task)
-                reporter.start()
         # TODO: can this be atomic?
         self._check_out(len(tasks))
         return tasks
@@ -310,8 +307,6 @@ class Stage(object):
 
 
 class Task(object):
-    OP_REPORT = 'report'
-
     def __init__(self, stage, payload, context):
         self.payload = payload
         self.context = context
