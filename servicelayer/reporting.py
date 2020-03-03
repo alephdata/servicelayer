@@ -3,7 +3,7 @@ from datetime import datetime
 from normality import stringify
 
 from servicelayer.jobs import Task
-from servicelayer.settings import WORKER_REPORTING_DISABLED
+from servicelayer.settings import WORKER_REPORTING
 from servicelayer.util import dump_json
 
 
@@ -31,7 +31,6 @@ class TaskReporter:
         self.operation = operation
         self.dataset = dataset
         self.defaults = defaults
-        self.reporting_enabled = not WORKER_REPORTING_DISABLED
 
     def start(self, **data):
         self.handle(status=Status.START, **data)
@@ -65,7 +64,7 @@ class TaskReporter:
         return data
 
     def handle(self, **data):
-        if self.reporting_enabled:
+        if WORKER_REPORTING:
             if self.task:
                 self._handle_task(self.task, **data)
             else:
