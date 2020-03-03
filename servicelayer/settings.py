@@ -11,6 +11,7 @@ REDIS_PREFIX = 'sla'
 # Worker
 WORKER_RETRY = env.to_int('WORKER_RETRY', 3)
 WORKER_THREADS = env.to_int('WORKER_THREADS', multiprocessing.cpu_count())
+WORKER_REPORTING_DISABLED = env.get('WORKER_REPORTING_DISABLED') == 'true'
 
 # Amazon client credentials
 AWS_KEY_ID = env.get('AWS_ACCESS_KEY_ID')

@@ -34,22 +34,14 @@ class Worker(ABC):
             sys.exit(23)
 
     def handle_safe(self, task):
-        reporter = None
-        if self.should_report(task):
-            reporter = self.get_task_reporter(task)
-            reporter.start()
         try:
             self.handle(task)
-        except (SystemExit, KeyboardInterrupt, Exception) as e:
-            if reporter:
-                reporter.error(exception=e)
+        except (SystemExit, KeyboardInterrupt, Exception):
             self.retry(task)
             raise
         finally:
             task.done()
             self.after_task(task)
-            if reporter:
-                reporter.end()
 
     def init_internal(self):
         self._shutdown = False
@@ -118,12 +110,8 @@ class Worker(ABC):
         """Optional hook excuted after handling a task"""
         pass
 
-    def should_report(self, task):
-        """logic to override on child workers to determine if the task should be reported"""
-        return task.context.get('reporter', False)
-
     def get_task_reporter(self, task):
-        return self.reporter.from_data(task.context['reporter'], task=task)
+        return self.reporter.from_task(task)
 
     @abstractmethod
     def handle(self, task):
