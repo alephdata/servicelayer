@@ -73,13 +73,13 @@ class TaskReporter:
     def _handle_task(self, task, **extra):
         """queue a new reporting task based on given `task`"""
         status = extra.pop('status')
-        operation = extra.pop('operation', None)
+        operation = extra.pop('operation', self.operation) or task.stage.stage
         payload = self.get_report_data(
             job=task.job.id,
             status=status,
-            operation=operation or task.stage.stage,
+            operation=operation,
             dataset=task.job.dataset.name,
-            dump=task.serialize(),
+            task=task.serialize(),
             **extra
         )
         stage = task.job.get_stage(OP_REPORT)
