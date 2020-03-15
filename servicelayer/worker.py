@@ -6,7 +6,6 @@ from abc import ABC, abstractmethod
 
 from servicelayer import settings
 from servicelayer.jobs import Stage
-from servicelayer.reporting import TaskReporter
 from servicelayer.cache import get_redis
 from servicelayer.util import unpack_int
 
@@ -15,10 +14,6 @@ log = logging.getLogger(__name__)
 
 class Worker(ABC):
     """Workers of all microservices, unite!"""
-    TASK_START = 'start'
-    TASK_END = 'end'
-    TASK_ERROR = 'error'
-    reporter = TaskReporter(conn=get_redis())
 
     def __init__(self, conn=None, stages=None,
                  num_threads=settings.WORKER_THREADS):
@@ -109,9 +104,6 @@ class Worker(ABC):
     def after_task(self, task):
         """Optional hook excuted after handling a task"""
         pass
-
-    def get_task_reporter(self, task):
-        return self.reporter.from_task(task)
 
     @abstractmethod
     def handle(self, task):
