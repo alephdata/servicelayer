@@ -41,13 +41,12 @@ class RateLimit(object):
     def comply(self, amount=1):
         """Update, then sleep for the time required to adhere to the
         rate limit."""
-        # FIXME: this is trying to be smart, which will probably
-        # backfire. Rather than just halt when the rate is exceeded,
-        # this is trying to average down calls to the appropriate
-        # frequency.
-        rate = self.update(amount=amount) / self.limit
-        expected = self.interval / self.limit
-        excess = rate - expected
-        if excess > 0:
-            time.sleep(excess)
-        return rate
+        expected_interval = (self.interval * self.unit) / self.limit
+        key = make_key(PREFIX, 'rate', self.resource, self._time())
+        count = int(self.conn.get(key) or 0)
+        if count != 0:
+            avg_interval = (self.interval * self.unit) / (count + 1)
+            excess = expected_interval - avg_interval
+            if excess >= 0:
+                time.sleep(expected_interval)
+        self.update(amount=amount)
