@@ -12,6 +12,6 @@ class RateLimitTest(TestCase):
         assert limit.check()
         limit.update()
         assert limit.check()
-        for _ in range(13):
-            limit.update()
+        for num in range(13):
+            assert num + 2 == limit.update()
         assert not limit.check()
