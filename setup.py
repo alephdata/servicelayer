@@ -27,7 +27,7 @@ setup(
         'six >= 1.12.0',
         'normality >= 1.0.0',
         'redis == 3.4.1',
-        'fakeredis == 1.4.0',
+        'fakeredis == 1.4.1',
     ],
     extras_require={
         'amazon': [
