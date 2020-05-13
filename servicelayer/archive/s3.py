@@ -1,6 +1,7 @@
 import boto3
 import logging
 from botocore.exceptions import ClientError
+from normality import safe_filename
 
 from servicelayer import settings
 from servicelayer.archive.virtual import VirtualArchive
@@ -54,13 +55,14 @@ class S3Archive(VirtualArchive):
         except ClientError:
             log.exception("Could not update CORS")
 
-    def _locate_key(self, content_hash):
+    def _locate_key(self, content_hash=None, prefix=None):
         """Check if a file with the given hash exists on S3."""
-        if content_hash is None:
-            return
-        prefix = self._get_prefix(content_hash)
         if prefix is None:
-            return
+            if content_hash is None:
+                return
+            prefix = self._get_prefix(content_hash)
+            if prefix is None:
+                return
         res = self.client.list_objects(MaxKeys=1,
                                        Bucket=self.bucket,
                                        Prefix=prefix)
@@ -99,8 +101,11 @@ class S3Archive(VirtualArchive):
             self.client.download_file(self.bucket, key, str(path))
             return path
 
-    def generate_url(self, content_hash, file_name=None, mime_type=None):
-        key = self._locate_key(content_hash)
+    def generate_url(self, content_hash=None, file_name=None, mime_type=None, key=None):  # noqa
+        if content_hash is not None:
+            key = self._locate_key(content_hash)
+        elif key is not None:
+            key = self._locate_key(prefix=key)
         if key is None:
             return
         params = {
@@ -115,3 +120,28 @@ class S3Archive(VirtualArchive):
         return self.client.generate_presigned_url('get_object',
                                                   Params=params,
                                                   ExpiresIn=self.TIMEOUT)
+
+    def store_export(self, namespace, file_path, mime_type=None):
+        file_path = ensure_path(file_path)
+        file_name = safe_filename(file_path, default='data')
+        store_path = '{0}/{1}'.format(namespace, file_name)
+        extra = {}
+        if mime_type is not None:
+            extra['ContentType'] = mime_type
+        with open(file_path, 'rb') as fh:
+            self.client.upload_fileobj(fh, self.bucket, str(store_path),
+                                       ExtraArgs=extra)
+
+    def load_export(self, namespace, file_name, temp_path=None):
+        local_path = self._local_export_path(namespace, file_name, temp_path)
+        key = '{0}/{1}'.format(namespace, file_name)
+        key = self._locate_key(prefix=key)
+        if key is not None:
+            self.client.download_file(self.bucket, key, str(local_path))
+            return local_path
+
+    def delete_export(self, namespace, file_name):
+        key = '{0}/{1}'.format(namespace, file_name)
+        key = self._locate_key(prefix=key)
+        if key is not None:
+            self.client.delete_object(Bucket=self.bucket, Key=key)

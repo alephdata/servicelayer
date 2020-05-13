@@ -19,3 +19,10 @@ def init_archive(archive_type=settings.ARCHIVE_TYPE,
         return GoogleStorageArchive(bucket=bucket)
 
     return FileArchive(path=path)
+
+
+def init_export_archive(archive_type=settings.ARCHIVE_TYPE,
+                        path=settings.EXPORT_PATH,
+                        bucket=settings.EXPORT_BUCKET):
+    """Instatiate an archive for exports."""
+    return init_archive(archive_type, path, bucket)

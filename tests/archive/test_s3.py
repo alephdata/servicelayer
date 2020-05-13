@@ -49,3 +49,14 @@ class FileArchiveTest(TestCase):
         assert path.is_file(), path
         self.archive.cleanup_file(out)
         assert not path.exists(), path
+
+    def test_export(self):
+        self.archive.store_export('banana', self.file, 'text/plain')
+        path = self.archive.load_export('banana', 'test_s3.py')
+        assert path is not None, path
+        assert path.is_file(), path
+        assert path.name == 'test_s3.py', path.name
+        assert path.parent.name == 'banana', path.parent
+        self.archive.delete_export('banana', 'test_s3.py')
+        path = self.archive.load_export('banana', 'test_s3.py')
+        assert path is None
