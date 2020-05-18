@@ -26,7 +26,7 @@ setup(
         'banal >= 0.4.2',
         'six >= 1.12.0',
         'normality >= 1.0.0',
-        'redis == 3.5.1',
+        'redis == 3.5.2',
         'fakeredis == 1.4.1',
     ],
     extras_require={
