@@ -6,7 +6,7 @@ from servicelayer.archive import init_archive
 from servicelayer.archive.util import checksum, ensure_path
 
 
-class FileArchiveTest(TestCase):
+class S3ArchiveTest(TestCase):
 
     def setUp(self):
         self.mock = mock_s3()
@@ -49,3 +49,15 @@ class FileArchiveTest(TestCase):
         assert path.is_file(), path
         self.archive.cleanup_file(out)
         assert not path.exists(), path
+
+    def test_publication(self):
+        self.archive.publish('banana', self.file, 'text/plain')
+        url = self.archive.generate_publication_url(
+            'banana', 'test_s3.py', mime_type='text/plain', expire=3000
+        )
+        assert url is not None, url
+        self.archive.delete_publication('banana', 'test_s3.py')
+        url = self.archive.generate_publication_url(
+            'banana', 'test_s3.py', mime_type='text/plain', expire=3000
+        )
+        assert url is None

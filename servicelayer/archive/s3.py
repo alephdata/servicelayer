@@ -101,11 +101,8 @@ class S3Archive(VirtualArchive):
             self.client.download_file(self.bucket, key, str(path))
             return path
 
-    def generate_url(self, content_hash=None, file_name=None, mime_type=None, key=None):  # noqa
-        if content_hash is not None:
-            key = self._locate_key(content_hash)
-        elif key is not None:
-            key = self._locate_key(prefix=key)
+    def generate_url(self, content_hash, file_name=None, mime_type=None):
+        key = self._locate_key(content_hash)
         if key is None:
             return
         params = {
@@ -121,7 +118,7 @@ class S3Archive(VirtualArchive):
                                                   Params=params,
                                                   ExpiresIn=self.TIMEOUT)
 
-    def store_export(self, namespace, file_path, mime_type=None):
+    def publish(self, namespace, file_path, mime_type=None):
         file_path = ensure_path(file_path)
         file_name = safe_filename(file_path, default='data')
         store_path = '{0}/{1}'.format(namespace, file_name)
@@ -132,8 +129,27 @@ class S3Archive(VirtualArchive):
             self.client.upload_fileobj(fh, self.bucket, str(store_path),
                                        ExtraArgs=extra)
 
-    def delete_export(self, namespace, file_name):
+    def delete_publication(self, namespace, file_name):
         key = '{0}/{1}'.format(namespace, file_name)
         key = self._locate_key(prefix=key)
         if key is not None:
             self.client.delete_object(Bucket=self.bucket, Key=key)
+
+    def generate_publication_url(self, namespace, file_name, mime_type=None,
+                                 expire=None):
+        key = '{0}/{1}'.format(namespace, file_name)
+        key = self._locate_key(prefix=key)
+        if key is None:
+            return
+        params = {
+            'Bucket': self.bucket,
+            'Key': key
+        }
+        if mime_type is not None:
+            params['ResponseContentType'] = mime_type
+        disposition = 'attachment; filename=%s' % file_name
+        params['ResponseContentDisposition'] = disposition
+        expire = expire or self.TIMEOUT
+        return self.client.generate_presigned_url('get_object',
+                                                  Params=params,
+                                                  ExpiresIn=expire)

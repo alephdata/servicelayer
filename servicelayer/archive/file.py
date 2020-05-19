@@ -51,7 +51,7 @@ class FileArchive(Archive):
     def load_file(self, content_hash, file_name=None, temp_path=None):
         return self._locate_key(content_hash)
 
-    def store_export(self, namespace, file_path, mime_type=None):
+    def publish(self, namespace, file_path, mime_type=None):
         store_path = self.path.joinpath(namespace)
         store_path.mkdir(parents=True, exist_ok=True)
         file_name = safe_filename(file_path, default='data')
@@ -60,23 +60,16 @@ class FileArchive(Archive):
             with open(store_path, 'wb') as fout:
                 shutil.copyfileobj(fin, fout, BUF_SIZE)
 
-    def load_export(self, namespace, file_name, temp_path=None):
+    def load_publication(self, namespace, file_name, temp_path=None):
         path = self.path.joinpath(namespace, file_name)
         try:
             return path.resolve(strict=True)
         except FileNotFoundError:
             return
 
-    def delete_export(self, namespace, file_name):
+    def delete_publication(self, namespace, file_name):
         path = self.path.joinpath(namespace, file_name)
         try:
             path.unlink()
-        except FileNotFoundError:
-            pass
-
-    def delete_all_exports(self, namespace):
-        path = self.path.joinpath(namespace)
-        try:
-            shutil.rmtree(path)
         except FileNotFoundError:
             pass

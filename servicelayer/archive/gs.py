@@ -118,11 +118,8 @@ class GoogleStorageArchive(VirtualArchive):
         # Returns None for "persistent error" as well as "file not found" :/
         log.debug("[%s] not found, or the backend is down.", content_hash)
 
-    def generate_url(self, content_hash=None, file_name=None, mime_type=None, key=None):  # noqa
-        if content_hash is not None:
-            blob = self._locate_contenthash(content_hash)
-        elif key is not None:
-            blob = self._locate_key(key)
+    def generate_url(self, content_hash, file_name=None, mime_type=None):
+        blob = self._locate_contenthash(content_hash)
         if blob is None:
             return
         disposition = None
@@ -133,7 +130,7 @@ class GoogleStorageArchive(VirtualArchive):
                                         response_type=mime_type,
                                         response_disposition=disposition)
 
-    def store_export(self, namespace, file_path, mime_type=None):
+    def publish(self, namespace, file_path, mime_type=None):
         file_path = ensure_posix_path(file_path)
         file_name = safe_filename(file_path, default='data')
         store_path = '{0}/{1}'.format(namespace, file_name)
@@ -146,7 +143,7 @@ class GoogleStorageArchive(VirtualArchive):
                 log.exception("Store error in GS")
                 backoff(failures=attempt)
 
-    def delete_export(self, namespace, file_name):
+    def delete_publication(self, namespace, file_name):
         key = '{0}/{1}'.format(namespace, file_name)
         for attempt in service_retries():
             try:
@@ -157,4 +154,17 @@ class GoogleStorageArchive(VirtualArchive):
                 log.exception("Load error in GS")
                 backoff(failures=attempt)
 
-        log.debug("[%s] not found, or the backend is down.", key)
+        log.warn("[%s] not found, or the backend is down.", key)
+
+    def generate_publication_url(self, namespace, file_name, mime_type=None,
+                                 expire=None):
+        key = '{0}/{1}'.format(namespace, file_name)
+        blob = self._locate_key(key)
+        if blob is None:
+            return
+        disposition = 'attachment; filename=%s' % file_name
+        expire = expire or self.TIMEOUT
+        expire = datetime.utcnow() + timedelta(seconds=expire)
+        return blob.generate_signed_url(expire,
+                                        response_type=mime_type,
+                                        response_disposition=disposition)
