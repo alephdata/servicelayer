@@ -146,22 +146,6 @@ class GoogleStorageArchive(VirtualArchive):
                 log.exception("Store error in GS")
                 backoff(failures=attempt)
 
-    def load_export(self, namespace, file_name, temp_path=None):
-        local_path = self._local_export_path(namespace, file_name, temp_path)
-        key = '{0}/{1}'.format(namespace, file_name)
-        for attempt in service_retries():
-            try:
-                blob = self._locate_key(key)
-                if blob is not None:
-                    blob.download_to_filename(local_path)
-                    return local_path
-            except FAILURES:
-                log.exception("Load error in GS")
-                backoff(failures=attempt)
-
-        # Returns None for "persistent error" as well as "file not found" :/
-        log.debug("[%s] not found, or the backend is down.", key)
-
     def delete_export(self, namespace, file_name):
         key = '{0}/{1}'.format(namespace, file_name)
         for attempt in service_retries():

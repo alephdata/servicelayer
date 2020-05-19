@@ -132,14 +132,6 @@ class S3Archive(VirtualArchive):
             self.client.upload_fileobj(fh, self.bucket, str(store_path),
                                        ExtraArgs=extra)
 
-    def load_export(self, namespace, file_name, temp_path=None):
-        local_path = self._local_export_path(namespace, file_name, temp_path)
-        key = '{0}/{1}'.format(namespace, file_name)
-        key = self._locate_key(prefix=key)
-        if key is not None:
-            self.client.download_file(self.bucket, key, str(local_path))
-            return local_path
-
     def delete_export(self, namespace, file_name):
         key = '{0}/{1}'.format(namespace, file_name)
         key = self._locate_key(prefix=key)
