@@ -21,8 +21,8 @@ def init_archive(archive_type=settings.ARCHIVE_TYPE,
     return FileArchive(path=path)
 
 
-def init_export_archive(archive_type=settings.ARCHIVE_TYPE,
-                        path=settings.EXPORT_PATH,
-                        bucket=settings.EXPORT_BUCKET):
-    """Instatiate an archive for exports."""
+def init_publication_archive(archive_type=settings.ARCHIVE_TYPE,
+                             path=settings.PUBLICATION_PATH,
+                             bucket=settings.PUBLICATION_BUCKET):
+    """Instatiate an archive to publish files"""
     return init_archive(archive_type, path, bucket)

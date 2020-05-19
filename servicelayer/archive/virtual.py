@@ -30,15 +30,6 @@ class VirtualArchive(Archive):
         path.mkdir(parents=True, exist_ok=True)
         return path.joinpath(safe_filename(file_name, default='data'))
 
-    def _local_export_path(self, namespace, file_name, temp_path):
-        if temp_path is None:
-            if not hasattr(self.local, 'dir'):
-                self.local.dir = tempfile.mkdtemp(prefix=self.base_name)
-            temp_path = self.local.dir
-        export_path = ensure_path(temp_path).joinpath('exports.sl', namespace)
-        export_path.mkdir(parents=True, exist_ok=True)
-        return export_path.joinpath(safe_filename(file_name, default='data'))
-
     def cleanup_file(self, content_hash, temp_path=None):
         """Delete the local cached version of the file."""
         if content_hash is None:
