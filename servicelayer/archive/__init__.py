@@ -19,3 +19,10 @@ def init_archive(archive_type=settings.ARCHIVE_TYPE,
         return GoogleStorageArchive(bucket=bucket)
 
     return FileArchive(path=path)
+
+
+def init_publication_archive(archive_type=settings.ARCHIVE_TYPE,
+                             path=settings.PUBLICATION_PATH,
+                             bucket=settings.PUBLICATION_BUCKET):
+    """Instatiate an archive to publish files"""
+    return init_archive(archive_type, path, bucket)

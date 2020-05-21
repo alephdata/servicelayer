@@ -1,6 +1,7 @@
 import boto3
 import logging
 from botocore.exceptions import ClientError
+from normality import safe_filename
 
 from servicelayer import settings
 from servicelayer.archive.virtual import VirtualArchive
@@ -54,13 +55,14 @@ class S3Archive(VirtualArchive):
         except ClientError:
             log.exception("Could not update CORS")
 
-    def _locate_key(self, content_hash):
+    def _locate_key(self, content_hash=None, prefix=None):
         """Check if a file with the given hash exists on S3."""
-        if content_hash is None:
-            return
-        prefix = self._get_prefix(content_hash)
         if prefix is None:
-            return
+            if content_hash is None:
+                return
+            prefix = self._get_prefix(content_hash)
+            if prefix is None:
+                return
         res = self.client.list_objects(MaxKeys=1,
                                        Bucket=self.bucket,
                                        Prefix=prefix)
@@ -115,3 +117,39 @@ class S3Archive(VirtualArchive):
         return self.client.generate_presigned_url('get_object',
                                                   Params=params,
                                                   ExpiresIn=self.TIMEOUT)
+
+    def publish(self, namespace, file_path, mime_type=None):
+        file_path = ensure_path(file_path)
+        file_name = safe_filename(file_path, default='data')
+        store_path = '{0}/{1}'.format(namespace, file_name)
+        extra = {}
+        if mime_type is not None:
+            extra['ContentType'] = mime_type
+        with open(file_path, 'rb') as fh:
+            self.client.upload_fileobj(fh, self.bucket, str(store_path),
+                                       ExtraArgs=extra)
+
+    def delete_publication(self, namespace, file_name):
+        key = '{0}/{1}'.format(namespace, file_name)
+        key = self._locate_key(prefix=key)
+        if key is not None:
+            self.client.delete_object(Bucket=self.bucket, Key=key)
+
+    def generate_publication_url(self, namespace, file_name, mime_type=None,
+                                 expire=None):
+        key = '{0}/{1}'.format(namespace, file_name)
+        key = self._locate_key(prefix=key)
+        if key is None:
+            return
+        params = {
+            'Bucket': self.bucket,
+            'Key': key
+        }
+        if mime_type is not None:
+            params['ResponseContentType'] = mime_type
+        disposition = 'attachment; filename=%s' % file_name
+        params['ResponseContentDisposition'] = disposition
+        expire = expire or self.TIMEOUT
+        return self.client.generate_presigned_url('get_object',
+                                                  Params=params,
+                                                  ExpiresIn=expire)
