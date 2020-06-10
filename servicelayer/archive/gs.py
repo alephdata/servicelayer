@@ -1,5 +1,6 @@
 import os
 import logging
+import threading
 from datetime import datetime, timedelta
 from google.cloud.storage import Blob
 from google.cloud.storage.client import Client
@@ -22,27 +23,21 @@ class GoogleStorageArchive(VirtualArchive):
 
     def __init__(self, bucket=None):
         super(GoogleStorageArchive, self).__init__(bucket)
-        self.client = Client()
         log.info("Archive: gs://%s", bucket)
+        self._bucket = bucket
+        self.local = threading.local()
 
-        self.bucket = self.client.lookup_bucket(bucket)
-        if self.bucket is None:
-            self.bucket = self.client.create_bucket(bucket)
-            self.upgrade()
+    @property
+    def bucket(self):
+        if not hasattr(self.local, 'bucket'):
+            client = Client()
+            self.local.bucket = client.lookup_bucket(self._bucket)
+            if self.bucket is None:
+                self.local.bucket = client.create_bucket(self._bucket)
+                self.upgrade()
+        return self.local.bucket
 
     def upgrade(self):
-        # 'Accept-Ranges',
-        # 'Content-Encoding',
-        # 'Content-Length',
-        # 'Content-Range',
-        # 'Cache-Control',
-        # 'Content-Language',
-        # 'Content-Type',
-        # 'Expires',
-        # 'Last-Modified',
-        # 'Pragma',
-        # 'Range',
-        # 'Date',
         policy = {
             "origin": ['*'],
             "method": ['GET', 'HEAD', 'OPTIONS'],
