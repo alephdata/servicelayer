@@ -8,6 +8,9 @@ REDIS_LONG = REDIS_SHORT * 200
 REDIS_EXPIRE = env.to_int('REDIS_EXPIRE', REDIS_SHORT * 7)
 REDIS_PREFIX = 'sla'
 
+# Persistent database tags
+TAGS_DATABASE_URI = env.get('TAGS_DATABASE_URI', 'sqlite://')
+
 # Worker
 WORKER_RETRY = env.to_int('WORKER_RETRY', 3)
 WORKER_THREADS = env.to_int('WORKER_THREADS', multiprocessing.cpu_count())

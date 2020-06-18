@@ -28,13 +28,15 @@ setup(
         'normality >= 1.0.0',
         'redis == 3.5.3',
         'fakeredis == 1.4.1',
+        'sqlalchemy >= 1.3',
     ],
     extras_require={
         'amazon': [
             'boto3 >= 1.11.9',
         ],
         'google': [
-            'google-cloud-storage >= 1.10.0',
+            'grpcio == 1.29.0',
+            'google-cloud-storage == 1.29.0',
         ],
         'dev': [
             'twine',
