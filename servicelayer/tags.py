@@ -28,9 +28,12 @@ class Tags(object):
         )
         self.table.create(bind=self.engine, checkfirst=True)
 
-    def delete(self, key=None):
+    def delete(self, key=None, prefix=None):
         stmt = self.table.delete()
-        stmt = stmt.where(self.table.c.key == key)
+        if key is not None:
+            stmt = stmt.where(self.table.c.key == key)
+        if prefix is not None:
+            stmt = stmt.where(self.table.c.key.startswith(prefix))
         self.engine.execute(stmt)
 
     def close(self):
