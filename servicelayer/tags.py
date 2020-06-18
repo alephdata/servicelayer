@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 from sqlalchemy import Column, DateTime, String
 from sqlalchemy import Table, MetaData, JSON
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as upsert
@@ -37,14 +37,23 @@ class Tags(object):
         self.engine.dispose()
 
     def get(self, key, since=None):
-        stmt = self.table.select()
+        stmt = select([self.table.c.value])
         stmt = stmt.where(self.table.c.key == key)
         if since is not None:
-            stmt = stmt.where(self.table.c.since >= since)
+            stmt = stmt.where(self.table.c.timestamp >= since)
         rp = self.engine.execute(stmt)
         row = rp.fetchone()
         if row is not None:
             return row.value
+
+    def exists(self, key, since=None):
+        stmt = select([func.count()])
+        stmt = stmt.where(self.table.c.key == key)
+        if since is not None:
+            stmt = stmt.where(self.table.c.timestamp >= since)
+        rp = self.engine.execute(stmt)
+        count = rp.scalar()
+        return count > 0
 
     def _store_values(self, conn, row):
         try:
