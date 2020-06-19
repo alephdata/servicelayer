@@ -31,7 +31,8 @@ class Reporter(object):
     def error(self, exception, **data):
         self.handle(status=Status.ERROR, exception=exception, **data)
 
-    def handle(self, status, operation=None, exception=None, task=None, **payload):
+    def handle(self, status, operation=None, exception=None, task=None,
+               **payload):
         """Report a processing event that may be related to a task."""
         if not WORKER_REPORTING:
             return
