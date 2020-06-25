@@ -1,8 +1,9 @@
 import sys
 import signal
 import logging
-from threading import Thread
+from threading import Thread, Lock
 from abc import ABC, abstractmethod
+import queue
 
 from servicelayer import settings
 from servicelayer.jobs import Stage
@@ -19,8 +20,10 @@ class Worker(ABC):
                  num_threads=settings.WORKER_THREADS):
         self.conn = conn or get_redis()
         self.stages = stages
-        self.num_threads = num_threads
+        self.num_threads = num_threads or 1
         self._shutdown = False
+        self.lock = Lock()
+        self.queue = queue.Queue()
 
     def shutdown(self, *args):
         log.warning("Shutting down worker.")
@@ -51,14 +54,16 @@ class Worker(ABC):
 
     def process(self, interval=5):
         while True:
+            if(self.lock.locked()):
+                self.lock.release()
             if self._shutdown:
                 return
             self.periodic()
-            stages = self.get_stages()
-            task = Stage.get_task(self.conn, stages, timeout=interval)
-            if task is None:
-                continue
-            self.handle_safe(task)
+            try:
+                task = self.queue.get(timeout=interval)
+                self.handle_safe(task)
+            except queue.Empty:
+                pass
 
     def sync(self):
         """Process only the tasks already in the job queue, but do not
@@ -71,15 +76,29 @@ class Worker(ABC):
                 return
             self.handle_safe(task)
 
+    def pull_task(self, interval=5):
+        while self.lock.acquire(blocking=True):
+            if self._shutdown:
+                return
+            stages = self.get_stages()
+            task = Stage.get_task(self.conn, stages, timeout=interval)
+            if task is None:
+                continue
+            self.queue.put(task)
+
     def run(self):
         # Try to quit gracefully, e.g. after finishing the current task.
         signal.signal(signal.SIGINT, self.shutdown)
         signal.signal(signal.SIGTERM, self.shutdown)
         self.init_internal()
-        if not self.num_threads:
-            return self.process()
+
         log.info("Worker has %d threads.", self.num_threads)
-        threads = []
+
+        task_puller = Thread(target=self.pull_task)
+        task_puller.daemon = True
+        task_puller.start()
+        threads = [task_puller]
+
         for _ in range(self.num_threads):
             thread = Thread(target=self.process)
             thread.daemon = True
