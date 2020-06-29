@@ -1,7 +1,7 @@
 from unittest import TestCase
 
 from servicelayer.cache import get_fakeredis
-from servicelayer.jobs import Job, Stage, Task
+from servicelayer.jobs import Job
 from servicelayer.worker import Worker
 
 
