@@ -38,6 +38,7 @@ def wait_for_redis(pool):
         try:
             conn = Redis(connection_pool=pool, decode_responses=True)
             conn.ping()
+            return
         except BusyLoadingError:
             log.info("Waiting for redis to load...")
             backoff(failures=attempt)
