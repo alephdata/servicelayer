@@ -16,8 +16,10 @@ def get_fakeredis():
 
 def get_redis_pool():
     if not hasattr(settings, '_redis_pool'):
-        settings._redis_pool = ConnectionPool.from_url(settings.REDIS_URL,
-                                                       decode_responses=True)
+        pool = ConnectionPool.from_url(settings.REDIS_URL,
+                                       decode_responses=True)
+        settings._redis_pool = pool
+        wait_for_redis(pool)
     return settings._redis_pool
 
 
@@ -26,17 +28,16 @@ def get_redis():
     if settings.REDIS_URL is None:
         return get_fakeredis()
     conn = Redis(connection_pool=get_redis_pool(), decode_responses=True)
-    wait_for_redis(conn)
     return conn
 
 
-def wait_for_redis(conn):
+def wait_for_redis(pool):
     """Wait for redis to load its data into memory on initial system
     bootup."""
     for attempt in service_retries():
         try:
-            conn.get('test_redis_ready')
-            return conn
+            conn = Redis(connection_pool=pool, decode_responses=True)
+            conn.ping()
         except BusyLoadingError:
             log.info("Waiting for redis to load...")
             backoff(failures=attempt)
