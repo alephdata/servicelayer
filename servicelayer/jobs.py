@@ -171,11 +171,12 @@ class Stage(object):
         self.job = job
         self.conn = job.conn
         self.stage = stage
-        self.queue_key = make_key(PREFIX, 'q', job.dataset, stage, job.id)
         self.stages_key = self._get_stage_jobs_key(stage)
-        self.pending_key = make_key(self.queue_key, 'pending')
-        self.running_key = make_key(self.queue_key, 'running')
-        self.finished_key = make_key(self.queue_key, 'finished')
+        queue_id = (PREFIX, 'q', job.dataset, stage, job.id)
+        self.queue_key = make_key(*queue_id)
+        self.pending_key = make_key(*queue_id, 'pending')
+        self.running_key = make_key(*queue_id, 'running')
+        self.finished_key = make_key(*queue_id, 'finished')
 
     def _create(self, pipe):
         pipe.sadd(self.stages_key, self.queue_key)
