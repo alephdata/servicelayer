@@ -35,7 +35,7 @@ setup(
             'boto3 >= 1.11.9',
         ],
         'google': [
-            'grpcio == 1.29.0',
+            'grpcio == 1.30.0',
             'google-cloud-storage == 1.29.0',
         ],
         'dev': [
