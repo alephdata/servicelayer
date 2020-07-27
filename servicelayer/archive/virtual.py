@@ -11,7 +11,6 @@ log = logging.getLogger(__name__)
 
 
 class VirtualArchive(Archive):
-
     def __init__(self, base_name):
         self.local = threading.local()
         self.base_name = base_name
@@ -20,15 +19,15 @@ class VirtualArchive(Archive):
         """Determine a temporary path for the file on the local file
         system."""
         if temp_path is None:
-            if not hasattr(self.local, 'dir'):
+            if not hasattr(self.local, "dir"):
                 self.local.dir = tempfile.mkdtemp(prefix=self.base_name)
             temp_path = self.local.dir
-        return ensure_path(temp_path).joinpath('%s.sl' % content_hash)
+        return ensure_path(temp_path).joinpath("%s.sl" % content_hash)
 
     def _local_path(self, content_hash, file_name, temp_path):
         path = self._get_local_prefix(content_hash, temp_path=temp_path)
         path.mkdir(parents=True, exist_ok=True)
-        return path.joinpath(safe_filename(file_name, default='data'))
+        return path.joinpath(safe_filename(file_name, default="data"))
 
     def cleanup_file(self, content_hash, temp_path=None):
         """Delete the local cached version of the file."""

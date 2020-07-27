@@ -9,11 +9,10 @@ log = logging.getLogger(__name__)
 
 
 class FileArchive(Archive):
-
     def __init__(self, path=None):
         self.path = ensure_path(path)
         if self.path is None:
-            raise ValueError('No archive path is set.')
+            raise ValueError("No archive path is set.")
         log.info("Archive: %s", self.path)
 
     def _locate_key(self, content_hash):
@@ -41,10 +40,10 @@ class FileArchive(Archive):
         archive_prefix = self._get_prefix(content_hash)
         archive_path = self.path.joinpath(archive_prefix)
         archive_path.mkdir(parents=True, exist_ok=True)
-        file_name = safe_filename(file_path, default='data')
+        file_name = safe_filename(file_path, default="data")
         archive_path = archive_path.joinpath(file_name)
-        with open(file_path, 'rb') as fin:
-            with open(archive_path, 'wb') as fout:
+        with open(file_path, "rb") as fin:
+            with open(archive_path, "wb") as fout:
                 shutil.copyfileobj(fin, fout, BUF_SIZE)
         return content_hash
 
@@ -54,10 +53,10 @@ class FileArchive(Archive):
     def publish(self, namespace, file_path, mime_type=None):
         store_path = self.path.joinpath(namespace)
         store_path.mkdir(parents=True, exist_ok=True)
-        file_name = safe_filename(file_path, default='data')
+        file_name = safe_filename(file_path, default="data")
         store_path = store_path.joinpath(file_name)
-        with open(file_path, 'rb') as fin:
-            with open(store_path, 'wb') as fout:
+        with open(file_path, "rb") as fin:
+            with open(store_path, "wb") as fout:
                 shutil.copyfileobj(fin, fout, BUF_SIZE)
 
     def load_publication(self, namespace, file_name, temp_path=None):

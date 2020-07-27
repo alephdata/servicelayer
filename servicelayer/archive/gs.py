@@ -14,8 +14,13 @@ from servicelayer.archive.util import checksum, ensure_path, ensure_posix_path
 from servicelayer.util import service_retries, backoff
 
 log = logging.getLogger(__name__)
-FAILURES = (TooManyRequests, InternalServerError, ServiceUnavailable,
-            DataCorruption, InvalidResponse)
+FAILURES = (
+    TooManyRequests,
+    InternalServerError,
+    ServiceUnavailable,
+    DataCorruption,
+    InvalidResponse,
+)
 
 
 class GoogleStorageArchive(VirtualArchive):
@@ -29,7 +34,7 @@ class GoogleStorageArchive(VirtualArchive):
 
     @property
     def bucket(self):
-        if not hasattr(self.local, 'bucket'):
+        if not hasattr(self.local, "bucket"):
             client = Client()
             self.local.bucket = client.lookup_bucket(self._bucket)
             if self.bucket is None:
@@ -39,10 +44,10 @@ class GoogleStorageArchive(VirtualArchive):
 
     def upgrade(self):
         policy = {
-            "origin": ['*'],
-            "method": ['GET', 'HEAD', 'OPTIONS'],
-            "responseHeader": ['*'],
-            "maxAgeSeconds": self.TIMEOUT
+            "origin": ["*"],
+            "method": ["GET", "HEAD", "OPTIONS"],
+            "responseHeader": ["*"],
+            "maxAgeSeconds": self.TIMEOUT,
         }
         self.bucket.cors = [policy]
         self.bucket.update()
@@ -56,7 +61,7 @@ class GoogleStorageArchive(VirtualArchive):
             return
 
         # First, check the standard file name:
-        blob = Blob(os.path.join(prefix, 'data'), self.bucket)
+        blob = Blob(os.path.join(prefix, "data"), self.bucket)
         if blob.exists():
             return blob
 
@@ -88,7 +93,7 @@ class GoogleStorageArchive(VirtualArchive):
                 # if blob is not None:
                 #     return content_hash
 
-                path = os.path.join(self._get_prefix(content_hash), 'data')
+                path = os.path.join(self._get_prefix(content_hash), "data")
                 blob = Blob(path, self.bucket)
                 blob.upload_from_filename(file_path, content_type=mime_type)
                 return content_hash
@@ -119,16 +124,16 @@ class GoogleStorageArchive(VirtualArchive):
             return
         disposition = None
         if file_name is not None:
-            disposition = 'inline; filename=%s' % file_name
+            disposition = "inline; filename=%s" % file_name
         expire = datetime.utcnow() + timedelta(seconds=self.TIMEOUT)
-        return blob.generate_signed_url(expire,
-                                        response_type=mime_type,
-                                        response_disposition=disposition)
+        return blob.generate_signed_url(
+            expire, response_type=mime_type, response_disposition=disposition
+        )
 
     def publish(self, namespace, file_path, mime_type=None):
         file_path = ensure_posix_path(file_path)
-        file_name = safe_filename(file_path, default='data')
-        store_path = '{0}/{1}'.format(namespace, file_name)
+        file_name = safe_filename(file_path, default="data")
+        store_path = "{0}/{1}".format(namespace, file_name)
 
         for attempt in service_retries():
             try:
@@ -139,7 +144,7 @@ class GoogleStorageArchive(VirtualArchive):
                 backoff(failures=attempt)
 
     def delete_publication(self, namespace, file_name):
-        key = '{0}/{1}'.format(namespace, file_name)
+        key = "{0}/{1}".format(namespace, file_name)
         for attempt in service_retries():
             try:
                 blob = self._locate_key(key)
@@ -151,15 +156,16 @@ class GoogleStorageArchive(VirtualArchive):
 
         log.warn("[%s] not found, or the backend is down.", key)
 
-    def generate_publication_url(self, namespace, file_name, mime_type=None,
-                                 expire=None):
-        key = '{0}/{1}'.format(namespace, file_name)
+    def generate_publication_url(
+        self, namespace, file_name, mime_type=None, expire=None
+    ):
+        key = "{0}/{1}".format(namespace, file_name)
         blob = self._locate_key(key)
         if blob is None:
             return
-        disposition = 'attachment; filename=%s' % file_name
+        disposition = "attachment; filename=%s" % file_name
         expire = expire or self.TIMEOUT
         expire = datetime.utcnow() + timedelta(seconds=expire)
-        return blob.generate_signed_url(expire,
-                                        response_type=mime_type,
-                                        response_disposition=disposition)
+        return blob.generate_signed_url(
+            expire, response_type=mime_type, response_disposition=disposition
+        )

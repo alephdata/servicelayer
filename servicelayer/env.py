@@ -23,7 +23,7 @@ def to_bool(name, default=False):
     return as_bool(get(name), default=default)
 
 
-def to_list(name, default=[], separator=':'):
+def to_list(name, default=[], separator=":"):
     """Extract a list of values from the environment consistently.
     Multiple values are by default expected to be separated by a colon (':'),
     like in the UNIX $PATH variable.

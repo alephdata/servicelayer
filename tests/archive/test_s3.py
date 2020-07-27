@@ -7,11 +7,10 @@ from servicelayer.archive.util import checksum, ensure_path
 
 
 class S3ArchiveTest(TestCase):
-
     def setUp(self):
         self.mock = mock_s3()
         self.mock.start()
-        self.archive = init_archive('s3', bucket='foo')
+        self.archive = init_archive("s3", bucket="foo")
         self.file = ensure_path(__file__)
 
     def tearDown(self):
@@ -26,7 +25,7 @@ class S3ArchiveTest(TestCase):
         assert out == out2, (out, out2)
 
     def test_basic_archive_with_checksum(self):
-        checksum_ = 'banana'
+        checksum_ = "banana"
         out = self.archive.archive_file(self.file, checksum_)
         assert checksum_ == out, (checksum_, out)
 
@@ -51,13 +50,13 @@ class S3ArchiveTest(TestCase):
         assert not path.exists(), path
 
     def test_publication(self):
-        self.archive.publish('banana', self.file, 'text/plain')
+        self.archive.publish("banana", self.file, "text/plain")
         url = self.archive.generate_publication_url(
-            'banana', 'test_s3.py', mime_type='text/plain', expire=3000
+            "banana", "test_s3.py", mime_type="text/plain", expire=3000
         )
         assert url is not None, url
-        self.archive.delete_publication('banana', 'test_s3.py')
+        self.archive.delete_publication("banana", "test_s3.py")
         url = self.archive.generate_publication_url(
-            'banana', 'test_s3.py', mime_type='text/plain', expire=3000
+            "banana", "test_s3.py", mime_type="text/plain", expire=3000
         )
         assert url is None

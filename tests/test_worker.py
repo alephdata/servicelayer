@@ -6,7 +6,6 @@ from servicelayer.worker import Worker
 
 
 class CountingWorker(Worker):
-
     def boot(self):
         self.test_done = 0
 
@@ -15,14 +14,13 @@ class CountingWorker(Worker):
 
 
 class WorkerTest(TestCase):
-
     def test_run(self):
         conn = get_fakeredis()
-        operation = 'lala'
+        operation = "lala"
         worker = CountingWorker(conn=conn, stages=[operation])
         worker.sync()
         assert worker.test_done == 0, worker.test_done
-        job = Job.create(conn, 'test')
+        job = Job.create(conn, "test")
         stage = job.get_stage(operation)
         task = stage.queue({}, {})
         assert not job.is_done()

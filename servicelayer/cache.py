@@ -9,15 +9,14 @@ log = logging.getLogger(__name__)
 
 
 def get_fakeredis():
-    if not hasattr(settings, '_redis_fake'):
+    if not hasattr(settings, "_redis_fake"):
         settings._redis_fake = FakeRedis(decode_responses=True)
     return settings._redis_fake
 
 
 def get_redis_pool():
-    if not hasattr(settings, '_redis_pool'):
-        pool = ConnectionPool.from_url(settings.REDIS_URL,
-                                       decode_responses=True)
+    if not hasattr(settings, "_redis_pool"):
+        pool = ConnectionPool.from_url(settings.REDIS_URL, decode_responses=True)
         settings._redis_pool = pool
         wait_for_redis(pool)
     return settings._redis_pool
@@ -52,6 +51,6 @@ def make_key(*criteria):
         if criterion is None:
             continue
         criterion = str(criterion)
-        criterion = criterion.replace(':', '#')
+        criterion = criterion.replace(":", "#")
         parts.append(criterion)
-    return ':'.join(parts)
+    return ":".join(parts)

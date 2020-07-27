@@ -9,8 +9,8 @@ from servicelayer.util import dump_json
 class ReportingTest(TestCase):
     def setUp(self):
         self.conn = get_redis()
-        self.dataset = 'my-dataset'
-        self.operation = 'OP_FOO'
+        self.dataset = "my-dataset"
+        self.operation = "OP_FOO"
         self.job = Job.create(self.conn, self.dataset)
 
     def _get_task(self):
@@ -18,9 +18,7 @@ class ReportingTest(TestCase):
         return Stage.get_task(self.conn, [OP_REPORT])
 
     def test_reporting(self):
-        payload = {
-            'msg': 'I do report.'
-        }
+        payload = {"msg": "I do report."}
 
         reporter = Reporter(stage=self.job.get_stage(self.operation))
 
@@ -32,14 +30,14 @@ class ReportingTest(TestCase):
 
         data = task.payload
         values = {
-            'msg': 'I do report.',
-            'status': Status.START,
-            'has_error': False,
-            'operation': self.operation,
-            'dataset': self.dataset,
-            'updated_at': None,
-            'start_at': None,
-            'job': self.job.id
+            "msg": "I do report.",
+            "status": Status.START,
+            "has_error": False,
+            "operation": self.operation,
+            "dataset": self.dataset,
+            "updated_at": None,
+            "start_at": None,
+            "job": self.job.id,
         }
         for key, value in values.items():
             self.assertIn(key, data)
@@ -49,27 +47,25 @@ class ReportingTest(TestCase):
         # success
         reporter.end(**payload)
         task = self._get_task()
-        self.assertEqual(Status.SUCCESS, task.payload['status'])
-        self.assertIn('success_at', task.payload)
+        self.assertEqual(Status.SUCCESS, task.payload["status"])
+        self.assertIn("success_at", task.payload)
 
         # failing
-        reporter.error(Exception('An error occured!'), **payload)
+        reporter.error(Exception("An error occured!"), **payload)
         task = self._get_task()
         data = task.payload
-        self.assertEqual(Status.ERROR, data['status'])
-        self.assertTrue(data['has_error'])
-        self.assertIn('error_at', data)
-        self.assertEqual('Exception', data['error_name'])
-        self.assertEqual('An error occured!', data['error_msg'])
+        self.assertEqual(Status.ERROR, data["status"])
+        self.assertTrue(data["has_error"])
+        self.assertIn("error_at", data)
+        self.assertEqual("Exception", data["error_name"])
+        self.assertEqual("An error occured!", data["error_msg"])
 
     def test_reporting_from_task(self):
         task_data = {
-            'dataset': self.dataset,
-            'job': self.job.id,
-            'stage': self.job.get_stage(self.operation).stage,
-            'payload': {
-                'entities': ['a', 'b', 'c']
-            }
+            "dataset": self.dataset,
+            "job": self.job.id,
+            "stage": self.job.get_stage(self.operation).stage,
+            "payload": {"entities": ["a", "b", "c"]},
         }
         task = Task.unpack(self.conn, dump_json(task_data))
         serialized = task.serialize()
@@ -81,14 +77,14 @@ class ReportingTest(TestCase):
 
         data = task.payload
         values = {
-            'status': Status.START,
-            'has_error': False,
-            'operation': self.operation,
-            'dataset': self.dataset,
-            'updated_at': None,
-            'start_at': None,
-            'job': self.job.id,
-            'task': serialized
+            "status": Status.START,
+            "has_error": False,
+            "operation": self.operation,
+            "dataset": self.dataset,
+            "updated_at": None,
+            "start_at": None,
+            "job": self.job.id,
+            "task": serialized,
         }
         for key, value in values.items():
             self.assertIn(key, data)

@@ -20,7 +20,7 @@ class RateLimit(object):
         return int(time.time() / self.unit)
 
     def _key(self, slot):
-        return make_key(PREFIX, 'rate', self.resource, slot)
+        return make_key(PREFIX, "rate", self.resource, slot)
 
     def _keys(self):
         base = self._time()

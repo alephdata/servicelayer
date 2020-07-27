@@ -22,9 +22,9 @@ class Dataset(object):
     def __init__(self, conn, name):
         self.conn = conn
         self.name = name
-        self.key = make_key(PREFIX, 'qdatasets')
-        self.jobs_key = make_key(PREFIX, 'qdj', name)
-        self.stages_key = make_key(PREFIX, 'qds', name)
+        self.key = make_key(PREFIX, "qdatasets")
+        self.jobs_key = make_key(PREFIX, "qdj", name)
+        self.stages_key = make_key(PREFIX, "qds", name)
 
     def cancel(self):
         pipe = self.conn.pipeline()
@@ -46,13 +46,13 @@ class Dataset(object):
 
     def get_status(self):
         """Aggregate status for all stages on the given dataset."""
-        status = {'finished': 0, 'running': 0, 'pending': 0, 'jobs': []}
+        status = {"finished": 0, "running": 0, "pending": 0, "jobs": []}
         for job in self.get_jobs():
             progress = job.get_status()
-            status['jobs'].append(progress)
-            status['finished'] += progress['finished']
-            status['running'] += progress['running']
-            status['pending'] += progress['pending']
+            status["jobs"].append(progress)
+            status["finished"] += progress["finished"]
+            status["running"] += progress["running"]
+            status["pending"] += progress["pending"]
         return status
 
     def __str__(self):
@@ -66,29 +66,28 @@ class Dataset(object):
 
     @classmethod
     def get_active_datasets(cls, conn):
-        datasets_key = make_key(PREFIX, 'qdatasets')
+        datasets_key = make_key(PREFIX, "qdatasets")
         for name in conn.smembers(datasets_key):
             yield cls(conn, name)
 
     @classmethod
     def get_active_dataset_status(cls, conn):
-        result = {'total': 0, 'datasets': {}}
+        result = {"total": 0, "datasets": {}}
         for dataset in cls.get_active_datasets(conn):
             status = dataset.get_status()
-            result['total'] += 1
-            result['datasets'][dataset.name] = status
+            result["total"] += 1
+            result["datasets"][dataset.name] = status
         return result
 
 
 class Job(object):
-
     def __init__(self, conn, dataset, job_id):  # noqa
         self.conn = conn
         self.id = job_id
         self.dataset = Dataset.ensure(conn, dataset)
-        self.start_key = make_key(PREFIX, 'qd', self.id, dataset, 'start')
-        self.end_key = make_key(PREFIX, 'qd', self.id, dataset, 'end')
-        self.active_jobs_key = make_key(PREFIX, 'qdja')
+        self.start_key = make_key(PREFIX, "qd", self.id, dataset, "start")
+        self.end_key = make_key(PREFIX, "qd", self.id, dataset, "end")
+        self.active_jobs_key = make_key(PREFIX, "qdja")
 
     def get_stage(self, name):
         return Stage(self, name)
@@ -144,16 +143,16 @@ class Job(object):
 
     def get_status(self):
         """Aggregate status for all stages on the given job."""
-        status = {'finished': 0, 'running': 0, 'pending': 0, 'stages': []}
+        status = {"finished": 0, "running": 0, "pending": 0, "stages": []}
         start, end = self.conn.mget((self.start_key, self.end_key))
-        status['start_time'] = start
-        status['end_time'] = end
+        status["start_time"] = start
+        status["end_time"] = end
         for stage in self.get_stages():
             progress = stage.get_status()
-            status['stages'].append(progress)
-            status['finished'] += progress['finished']
-            status['running'] += progress['running']
-            status['pending'] += progress['pending']
+            status["stages"].append(progress)
+            status["finished"] += progress["finished"]
+            status["running"] += progress["running"]
+            status["pending"] += progress["pending"]
         return status
 
     @classmethod
@@ -166,17 +165,16 @@ class Job(object):
 
 
 class Stage(object):
-
     def __init__(self, job, stage):  # noqa
         self.job = job
         self.conn = job.conn
         self.stage = stage
         self.stages_key = self._get_stage_jobs_key(stage)
-        queue_id = (PREFIX, 'q', job.dataset, stage, job.id)
+        queue_id = (PREFIX, "q", job.dataset, stage, job.id)
         self.queue_key = make_key(*queue_id)
-        self.pending_key = make_key(*queue_id, 'pending')
-        self.running_key = make_key(*queue_id, 'running')
-        self.finished_key = make_key(*queue_id, 'finished')
+        self.pending_key = make_key(*queue_id, "pending")
+        self.running_key = make_key(*queue_id, "running")
+        self.finished_key = make_key(*queue_id, "finished")
 
     def _create(self, pipe):
         pipe.sadd(self.stages_key, self.queue_key)
@@ -186,8 +184,9 @@ class Stage(object):
     def _remove(self, pipe):
         """Remove tasks for the current `job_id` and `stage`"""
         pipe.srem(self.stages_key, self.queue_key)
-        pipe.delete(self.queue_key, self.pending_key,
-                    self.running_key, self.finished_key)
+        pipe.delete(
+            self.queue_key, self.pending_key, self.running_key, self.finished_key
+        )
 
     def _check_out(self, count=1):
         """Check out tasks and mark them as running."""
@@ -249,16 +248,16 @@ class Stage(object):
         keys = (self.pending_key, self.running_key, self.finished_key)
         pending, running, finished = self.conn.mget(keys)
         return {
-            'job_id': self.job.id,
-            'stage': self.stage,
-            'pending': max(0, unpack_int(pending)),
-            'running': max(0, unpack_int(running)),
-            'finished': max(0, unpack_int(finished)),
+            "job_id": self.job.id,
+            "stage": self.stage,
+            "pending": max(0, unpack_int(pending)),
+            "running": max(0, unpack_int(running)),
+            "finished": max(0, unpack_int(finished)),
         }
 
     @classmethod
     def _get_stage_jobs_key(cls, stage):
-        return make_key(PREFIX, 'qos', stage)
+        return make_key(PREFIX, "qos", stage)
 
     @classmethod
     def _get_queues(cls, conn, stages):
@@ -318,19 +317,21 @@ class Task(object):
         self.stage.mark_done(1)
 
     def serialize(self):
-        return dump_json({
-            'context': self.context or {},
-            'payload': self.payload,
-            'dataset': self.job.dataset.name,
-            'job': self.job.id,
-            'stage': self.stage.stage
-        })
+        return dump_json(
+            {
+                "context": self.context or {},
+                "payload": self.payload,
+                "dataset": self.job.dataset.name,
+                "job": self.job.id,
+                "stage": self.stage.stage,
+            }
+        )
 
     @classmethod
     def unpack(cls, conn, data):
         if data is None:
             return None
         data = load_json(data)
-        job = Job(conn, data.get('dataset'), data.get('job'))
-        stage = job.get_stage(data.get('stage'))
-        return Task(stage, data.get('payload'), data.get('context'))
+        job = Job(conn, data.get("dataset"), data.get("job"))
+        stage = job.get_stage(data.get("stage"))
+        return Task(stage, data.get("payload"), data.get("context"))

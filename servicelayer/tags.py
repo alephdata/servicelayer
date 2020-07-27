@@ -19,12 +19,14 @@ class Tags(object):
     def __init__(self, name, uri=settings.TAGS_DATABASE_URI, **config):
         self.name = name
         self.engine = create_engine(uri, **config)
-        self.is_postgres = self.engine.dialect.name == 'postgresql'
-        self.table = Table(name, MetaData(self.engine),
-            Column('key', String, primary_key=True),  # noqa
-            Column('value', JSONB if self.is_postgres else JSON),
-            Column('timestamp', DateTime),
-            extend_existing=True
+        self.is_postgres = self.engine.dialect.name == "postgresql"
+        self.table = Table(
+            name,
+            MetaData(self.engine),
+            Column("key", String, primary_key=True),  # noqa
+            Column("value", JSONB if self.is_postgres else JSON),
+            Column("timestamp", DateTime),
+            extend_existing=True,
         )
         self.table.create(bind=self.engine, checkfirst=True)
 
@@ -63,21 +65,21 @@ class Tags(object):
             stmt = self.table.insert().values(row)
             conn.execute(stmt)
         except IntegrityError:
-            changing = ('value', 'timestamp',)
+            changing = (
+                "value",
+                "timestamp",
+            )
             changed = {c: row.get(c, {}) for c in changing}
             stmt = self.table.update().values(changed)
-            stmt = stmt.where(self.table.c.key == row['key'])
+            stmt = stmt.where(self.table.c.key == row["key"])
             conn.execute(stmt)
 
     def _upsert_values(self, conn, row):
         """Use postgres' upsert mechanism (ON CONFLICT TO UPDATE)."""
         istmt = upsert(self.table).values(row)
         stmt = istmt.on_conflict_do_update(
-            index_elements=['key'],
-            set_=dict(
-                value=istmt.excluded.value,
-                timestamp=istmt.excluded.timestamp,
-            )
+            index_elements=["key"],
+            set_=dict(value=istmt.excluded.value, timestamp=istmt.excluded.timestamp,),
         )
         conn.execute(stmt)
 
@@ -85,7 +87,7 @@ class Tags(object):
         conn = self.engine.connect()
         tx = conn.begin()
         now = datetime.utcnow()
-        row = {'key': key, 'value': value, 'timestamp': now}
+        row = {"key": key, "value": value, "timestamp": now}
         try:
             if self.is_postgres:
                 self._upsert_values(conn, row)
@@ -98,4 +100,4 @@ class Tags(object):
             log.exception("Database error")
 
     def __repr__(self):
-        return '<Tags(%r, %r)>' % (self.engine, self.name)
+        return "<Tags(%r, %r)>" % (self.engine, self.name)

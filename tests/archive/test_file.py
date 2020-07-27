@@ -7,11 +7,10 @@ from servicelayer.archive.util import checksum, ensure_path
 
 
 class FileArchiveTest(TestCase):
-
     def setUp(self):
         tempdir = ensure_path(tempfile.gettempdir())
-        self.path = tempdir.joinpath('sltest')
-        self.archive = init_archive('file', path=self.path)
+        self.path = tempdir.joinpath("sltest")
+        self.archive = init_archive("file", path=self.path)
         self.file = ensure_path(__file__)
 
     def tearDown(self):
@@ -27,7 +26,7 @@ class FileArchiveTest(TestCase):
         assert out == out2, (out, out2)
 
     def test_basic_archive_with_checksum(self):
-        checksum_ = 'banana'
+        checksum_ = "banana"
         out = self.archive.archive_file(self.file, checksum_)
         assert checksum_ == out, (checksum_, out)
 
@@ -50,11 +49,11 @@ class FileArchiveTest(TestCase):
         assert path.is_file(), path
 
     def test_publication(self):
-        self.archive.publish('banana', self.file, 'text/plain')
-        path = self.archive.load_publication('banana', 'test_file.py')
+        self.archive.publish("banana", self.file, "text/plain")
+        path = self.archive.load_publication("banana", "test_file.py")
         assert path is not None, path
         assert path.is_file(), path
-        assert path.name == 'test_file.py', path.name
-        assert path.parent.name == 'banana', path.parent
-        self.archive.delete_publication('banana', 'test_file.py')
+        assert path.name == "test_file.py", path.name
+        assert path.parent.name == "banana", path.parent
+        self.archive.delete_publication("banana", "test_file.py")
         assert not path.exists()

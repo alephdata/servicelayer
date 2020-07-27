@@ -21,7 +21,7 @@ def checksum(file_name):
     file_name = ensure_path(file_name)
     if file_name is not None and file_name.is_file():
         digest = sha1()
-        with open(file_name, 'rb') as fh:
+        with open(file_name, "rb") as fh:
             while True:
                 block = fh.read(BUF_SIZE)
                 if not block:

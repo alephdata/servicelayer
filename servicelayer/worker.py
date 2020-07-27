@@ -15,8 +15,7 @@ log = logging.getLogger(__name__)
 class Worker(ABC):
     """Workers of all microservices, unite!"""
 
-    def __init__(self, conn=None, stages=None,
-                 num_threads=settings.WORKER_THREADS):
+    def __init__(self, conn=None, stages=None, num_threads=settings.WORKER_THREADS):
         self.conn = conn or get_redis()
         self.stages = stages
         self.num_threads = num_threads
@@ -43,10 +42,10 @@ class Worker(ABC):
         self.boot()
 
     def retry(self, task):
-        retries = unpack_int(task.context.get('retries'))
+        retries = unpack_int(task.context.get("retries"))
         if retries < settings.WORKER_RETRY:
             log.warning("Queue failed task for re-try...")
-            task.context['retries'] = retries + 1
+            task.context["retries"] = retries + 1
             task.stage.queue(task.payload, task.context)
 
     def process(self, interval=5):

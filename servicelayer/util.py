@@ -59,12 +59,11 @@ def unpack_datetime(value, default=None):
 
 
 class JSONEncoder(json.JSONEncoder):
-
     def default(self, obj):
         if isinstance(obj, (datetime, date)):
             return obj.isoformat()
         if isinstance(obj, bytes):
-            return obj.decode('utf-8')
+            return obj.decode("utf-8")
         if isinstance(obj, set):
             return [o for o in obj]
         return json.JSONEncoder.default(self, obj)
@@ -72,12 +71,12 @@ class JSONEncoder(json.JSONEncoder):
 
 def dump_json(data):
     if data is None:
-        return ''
+        return ""
     data = clean_dict(data)
     return JSONEncoder().encode(data)
 
 
 def load_json(encoded):
-    if encoded is None or encoded == '':
+    if encoded is None or encoded == "":
         return
     return json.loads(encoded)
