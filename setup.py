@@ -36,7 +36,7 @@ setup(
         ],
         'google': [
             'grpcio == 1.30.0',
-            'google-cloud-storage == 1.29.0',
+            'google-cloud-storage == 1.30.0',
         ],
         'dev': [
             'twine',
