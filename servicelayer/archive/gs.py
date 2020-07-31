@@ -139,9 +139,12 @@ class GoogleStorageArchive(VirtualArchive):
             try:
                 blob = Blob(store_path, self.bucket)
                 blob.upload_from_filename(file_path, content_type=mime_type)
-            except FAILURES:
-                log.exception("Store error in GS")
-                backoff(failures=attempt)
+            except FAILURES as ex:
+                if attempt < service_retries()[-1]:
+                    log.exception("Store error in GS")
+                    backoff(failures=attempt)
+                else:
+                    raise ex
 
     def delete_publication(self, namespace, file_name):
         key = "{0}/{1}".format(namespace, file_name)
@@ -157,13 +160,14 @@ class GoogleStorageArchive(VirtualArchive):
         log.warn("[%s] not found, or the backend is down.", key)
 
     def generate_publication_url(
-        self, namespace, file_name, mime_type=None, expire=None
+        self, namespace, file_name, mime_type=None, expire=None, attachment_name=None
     ):
         key = "{0}/{1}".format(namespace, file_name)
         blob = self._locate_key(key)
         if blob is None:
             return
-        disposition = "attachment; filename=%s" % file_name
+        attachment_name = attachment_name or file_name
+        disposition = "attachment; filename=%s" % attachment_name
         expire = expire or self.TIMEOUT
         expire = datetime.utcnow() + timedelta(seconds=expire)
         return blob.generate_signed_url(

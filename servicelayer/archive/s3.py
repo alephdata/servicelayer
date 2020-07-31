@@ -136,7 +136,7 @@ class S3Archive(VirtualArchive):
             self.client.delete_object(Bucket=self.bucket, Key=key)
 
     def generate_publication_url(
-        self, namespace, file_name, mime_type=None, expire=None
+        self, namespace, file_name, mime_type=None, expire=None, attachment_name=None
     ):
         key = "{0}/{1}".format(namespace, file_name)
         key = self._locate_key(prefix=key)
@@ -145,6 +145,7 @@ class S3Archive(VirtualArchive):
         params = {"Bucket": self.bucket, "Key": key}
         if mime_type is not None:
             params["ResponseContentType"] = mime_type
+        attachment_name = attachment_name or file_name
         disposition = "attachment; filename=%s" % file_name
         params["ResponseContentDisposition"] = disposition
         expire = expire or self.TIMEOUT
