@@ -146,7 +146,7 @@ class S3Archive(VirtualArchive):
         if mime_type is not None:
             params["ResponseContentType"] = mime_type
         attachment_name = attachment_name or file_name
-        disposition = "attachment; filename=%s" % file_name
+        disposition = "attachment; filename=%s" % attachment_name
         params["ResponseContentDisposition"] = disposition
         expire = expire or self.TIMEOUT
         return self.client.generate_presigned_url(
