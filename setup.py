@@ -26,7 +26,7 @@ setup(
         "banal >= 1.0.1",
         "normality >= 2.1.1",
         "redis == 3.5.3",
-        "fakeredis == 1.4.1",
+        "fakeredis == 1.4.2",
         "sqlalchemy >= 1.3",
     ],
     extras_require={
