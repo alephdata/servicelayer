@@ -29,3 +29,16 @@ class Archive(object):
 
     def generate_url(self, content_hash, file_name=None, mime_type=None):
         return None
+
+    @abc.abstractmethod
+    def publish(self, namespace, file_path, mime_type=None):
+        pass
+
+    @abc.abstractmethod
+    def delete_publication(self, namespace, file_name):
+        pass
+
+    def generate_publication_url(
+        self, namespace, file_name, mime_type=None, expire=None, attachment_name=None
+    ):
+        return None
