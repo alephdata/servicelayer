@@ -31,7 +31,7 @@ setup(
     ],
     extras_require={
         "amazon": ["boto3 >= 1.11.9"],
-        "google": ["grpcio == 1.31.0", "google-cloud-storage == 1.30.0"],
+        "google": ["grpcio == 1.31.0", "google-cloud-storage == 1.31.0"],
         "dev": [
             "twine",
             "moto",
