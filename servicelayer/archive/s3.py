@@ -32,7 +32,12 @@ class S3Archive(VirtualArchive):
         except ClientError as e:
             error_code = int(e.response["Error"]["Code"])
             if error_code == 404:
-                self.client.create_bucket(Bucket=bucket)
+                self.client.create_bucket(
+                    Bucket=bucket,
+                    CreateBucketConfiguration={
+                        "LocationConstraint": settings.AWS_REGION
+                    },
+                )
                 self.upgrade()
             else:
                 log.exception("Could not check bucket")
