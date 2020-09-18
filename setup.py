@@ -25,17 +25,20 @@ setup(
     install_requires=[
         "banal >= 1.0.1",
         "normality >= 2.1.1",
-        "redis == 3.5.3",
-        "fakeredis == 1.4.3",
+        "redis == 3.5.3, <3.6.0",
+        "fakeredis == 1.4.3, <1.5.0",
         "sqlalchemy >= 1.3",
     ],
     extras_require={
-        "amazon": ["boto3 >= 1.11.9"],
-        "google": ["grpcio == 1.31.0", "google-cloud-storage == 1.31.0"],
+        "amazon": ["boto3 >= 1.11.9, <2.0.0"],
+        "google": [
+            "grpcio >= 1.32.0, <2.0.0",
+            "google-cloud-storage >= 1.31.0, <2.0.0",
+        ],
         "dev": [
             "twine",
             "moto",
-            "boto3 >= 1.11.9",
+            "boto3 >= 1.11.9, <2.0.0",
             "pytest >= 3.6",
             "coverage",
             "pytest-cov",
