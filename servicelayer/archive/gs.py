@@ -7,7 +7,6 @@ from google.cloud.storage.client import Client
 from google.api_core.exceptions import TooManyRequests, InternalServerError
 from google.api_core.exceptions import ServiceUnavailable
 from google.resumable_media.common import DataCorruption, InvalidResponse
-from normality import safe_filename
 
 from servicelayer.archive.virtual import VirtualArchive
 from servicelayer.archive.util import checksum, ensure_path, ensure_posix_path
@@ -118,58 +117,32 @@ class GoogleStorageArchive(VirtualArchive):
         # Returns None for "persistent error" as well as "file not found" :/
         log.debug("[%s] not found, or the backend is down.", content_hash)
 
-    def generate_url(self, content_hash, file_name=None, mime_type=None):
+    def delete_file(self, content_hash):
+        """Check if a file with the given hash exists on S3."""
+        if content_hash is None:
+            return
+        prefix = self._get_prefix(content_hash)
+        if prefix is None:
+            return
+
+        # Iterate over all file names:
+        for blob in self.bucket.list_blobs(max_results=1, prefix=prefix):
+            for attempt in service_retries():
+                try:
+                    blob.delete()
+                except FAILURES:
+                    log.exception("Delete error in GS")
+                    backoff(failures=attempt)
+
+    def generate_url(self, content_hash, file_name=None, mime_type=None, expire=None):
         blob = self._locate_contenthash(content_hash)
         if blob is None:
             return
         disposition = None
         if file_name is not None:
             disposition = "inline; filename=%s" % file_name
-        expire = datetime.utcnow() + timedelta(seconds=self.TIMEOUT)
-        return blob.generate_signed_url(
-            expire, response_type=mime_type, response_disposition=disposition
-        )
-
-    def publish(self, namespace, file_path, mime_type=None):
-        file_path = ensure_posix_path(file_path)
-        file_name = safe_filename(file_path, default="data")
-        store_path = "{0}/{1}".format(namespace, file_name)
-
-        for attempt in service_retries():
-            try:
-                blob = Blob(store_path, self.bucket)
-                blob.upload_from_filename(file_path, content_type=mime_type)
-            except FAILURES as ex:
-                if attempt < service_retries()[-1]:
-                    log.exception("Store error in GS")
-                    backoff(failures=attempt)
-                else:
-                    raise ex
-
-    def delete_publication(self, namespace, file_name):
-        key = "{0}/{1}".format(namespace, file_name)
-        for attempt in service_retries():
-            try:
-                blob = self._locate_key(key)
-                if blob is not None:
-                    blob.delete()
-            except FAILURES:
-                log.exception("Load error in GS")
-                backoff(failures=attempt)
-
-        log.warn("[%s] not found, or the backend is down.", key)
-
-    def generate_publication_url(
-        self, namespace, file_name, mime_type=None, expire=None, attachment_name=None
-    ):
-        key = "{0}/{1}".format(namespace, file_name)
-        blob = self._locate_key(key)
-        if blob is None:
-            return
-        attachment_name = attachment_name or file_name
-        disposition = "attachment; filename=%s" % attachment_name
-        expire = expire or self.TIMEOUT
-        expire = datetime.utcnow() + timedelta(seconds=expire)
+        if expire is None:
+            expire = datetime.utcnow() + timedelta(seconds=self.TIMEOUT)
         return blob.generate_signed_url(
             expire, response_type=mime_type, response_disposition=disposition
         )

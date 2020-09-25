@@ -48,12 +48,11 @@ class FileArchiveTest(TestCase):
         path = self.archive.load_file(out)
         assert path.is_file(), path
 
-    def test_publication(self):
-        self.archive.publish("banana", self.file, "text/plain")
-        path = self.archive.load_publication("banana", "test_file.py")
+    def test_delete_file(self):
+        out = self.archive.archive_file(self.file)
+        path = self.archive.load_file(out)
         assert path is not None, path
-        assert path.is_file(), path
-        assert path.name == "test_file.py", path.name
-        assert path.parent.name == "banana", path.parent
-        self.archive.delete_publication("banana", "test_file.py")
-        assert not path.exists()
+        self.archive.cleanup_file(out)
+        self.archive.delete_file(out)
+        path = self.archive.load_file(out)
+        assert path is None, path

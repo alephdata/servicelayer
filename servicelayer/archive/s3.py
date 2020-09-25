@@ -1,7 +1,7 @@
 import boto3
 import logging
+from datetime import datetime
 from botocore.exceptions import ClientError
-from normality import safe_filename
 
 from servicelayer import settings
 from servicelayer.archive.virtual import VirtualArchive
@@ -108,7 +108,17 @@ class S3Archive(VirtualArchive):
             self.client.download_file(self.bucket, key, str(path))
             return path
 
-    def generate_url(self, content_hash, file_name=None, mime_type=None):
+    def delete_file(self, content_hash):
+        if content_hash is None:
+            return
+        prefix = self._get_prefix(content_hash)
+        if prefix is None:
+            return
+        res = self.client.list_objects(Bucket=self.bucket, Prefix=prefix)
+        for obj in res.get("Contents", []):
+            self.client.delete_object(Bucket=self.bucket, Key=obj.get("Key"))
+
+    def generate_url(self, content_hash, file_name=None, mime_type=None, expire=None):
         key = self._locate_key(content_hash)
         if key is None:
             return
@@ -118,42 +128,10 @@ class S3Archive(VirtualArchive):
         if file_name is not None:
             disposition = "inline; filename=%s" % file_name
             params["ResponseContentDisposition"] = disposition
+        expires_in = self.TIMEOUT
+        if expire is not None:
+            delta = expire - datetime.utcnow()
+            expires_in = int(delta.total_seconds())
         return self.client.generate_presigned_url(
-            "get_object", Params=params, ExpiresIn=self.TIMEOUT
-        )
-
-    def publish(self, namespace, file_path, mime_type=None):
-        file_path = ensure_path(file_path)
-        file_name = safe_filename(file_path, default="data")
-        store_path = "{0}/{1}".format(namespace, file_name)
-        extra = {}
-        if mime_type is not None:
-            extra["ContentType"] = mime_type
-        with open(file_path, "rb") as fh:
-            self.client.upload_fileobj(
-                fh, self.bucket, str(store_path), ExtraArgs=extra
-            )
-
-    def delete_publication(self, namespace, file_name):
-        key = "{0}/{1}".format(namespace, file_name)
-        key = self._locate_key(prefix=key)
-        if key is not None:
-            self.client.delete_object(Bucket=self.bucket, Key=key)
-
-    def generate_publication_url(
-        self, namespace, file_name, mime_type=None, expire=None, attachment_name=None
-    ):
-        key = "{0}/{1}".format(namespace, file_name)
-        key = self._locate_key(prefix=key)
-        if key is None:
-            return
-        params = {"Bucket": self.bucket, "Key": key}
-        if mime_type is not None:
-            params["ResponseContentType"] = mime_type
-        attachment_name = attachment_name or file_name
-        disposition = "attachment; filename=%s" % attachment_name
-        params["ResponseContentDisposition"] = disposition
-        expire = expire or self.TIMEOUT
-        return self.client.generate_presigned_url(
-            "get_object", Params=params, ExpiresIn=expire
+            "get_object", Params=params, ExpiresIn=expires_in
         )

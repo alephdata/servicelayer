@@ -49,14 +49,11 @@ class S3ArchiveTest(TestCase):
         self.archive.cleanup_file(out)
         assert not path.exists(), path
 
-    def test_publication(self):
-        self.archive.publish("banana", self.file, "text/plain")
-        url = self.archive.generate_publication_url(
-            "banana", "test_s3.py", mime_type="text/plain", expire=3000
-        )
-        assert url is not None, url
-        self.archive.delete_publication("banana", "test_s3.py")
-        url = self.archive.generate_publication_url(
-            "banana", "test_s3.py", mime_type="text/plain", expire=3000
-        )
-        assert url is None
+    def test_delete_file(self):
+        out = self.archive.archive_file(self.file)
+        path = self.archive.load_file(out)
+        assert path is not None, path
+        self.archive.cleanup_file(out)
+        self.archive.delete_file(out)
+        path = self.archive.load_file(out)
+        assert path is None, path
