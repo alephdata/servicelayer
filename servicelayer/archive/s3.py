@@ -19,6 +19,7 @@ class S3Archive(VirtualArchive):
         secret_key = settings.AWS_SECRET_KEY
         self.client = boto3.client(
             "s3",
+            endpoint_url=settings.ARCHIVE_ENDPOINT_URL,
             region_name=settings.AWS_REGION,
             aws_access_key_id=key_id,
             aws_secret_access_key=secret_key,

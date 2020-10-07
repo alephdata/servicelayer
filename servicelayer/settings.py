@@ -20,6 +20,8 @@ WORKER_REPORTING = env.to_bool("WORKER_REPORTING", True)
 AWS_KEY_ID = env.get("AWS_ACCESS_KEY_ID")
 AWS_SECRET_KEY = env.get("AWS_SECRET_ACCESS_KEY")
 AWS_REGION = env.get("AWS_REGION", "eu-west-1")
+# S3 compatible Minio host if using Minio for storage
+ARCHIVE_ENDPOINT_URL = env.get("ARCHIVE_ENDPOINT_URL")
 
 # Storage type (either 's3', 'gs', or 'file', i.e. local file system):
 ARCHIVE_TYPE = env.get("ARCHIVE_TYPE", "file")
