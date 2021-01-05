@@ -31,6 +31,4 @@ PUBLICATION_BUCKET = env.get("PUBLICATION_BUCKET")
 PUBLICATION_PATH = env.get("PUBLICATION_PATH")
 
 # Logging
-LOGGING_LEVEL = env.get("LOGGING_LEVEL", "DEBUG").upper()
-LOGGING_FORMAT = "%(levelname)s:%(name)s:%(message)s"
-LOGGING_FORMAT = env.get("LOGGING_FORMAT", LOGGING_FORMAT)
+LOG_FORMAT = env.get("LOG_FORMAT", "TEXT")  # options are: TEXT or JSON
