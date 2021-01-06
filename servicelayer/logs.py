@@ -1,8 +1,10 @@
-import logging
 import sys
-
+import time
+import uuid
+import logging
 import structlog
 from structlog.contextvars import merge_contextvars
+from structlog.contextvars import clear_contextvars, bind_contextvars
 
 from servicelayer import settings
 
@@ -24,7 +26,8 @@ def configure_logging(level=logging.INFO):
     if settings.LOG_FORMAT == LOG_FORMAT_TEXT:
         processors = common_processors
         formatter = structlog.stdlib.ProcessorFormatter(
-            foreign_pre_chain=processors, processor=structlog.dev.ConsoleRenderer(),
+            foreign_pre_chain=processors,
+            processor=structlog.dev.ConsoleRenderer(),
         )
     else:
         processors = common_processors + [
@@ -32,13 +35,16 @@ def configure_logging(level=logging.INFO):
             format_stackdriver,
         ]
         formatter = structlog.stdlib.ProcessorFormatter(
-            foreign_pre_chain=processors, processor=structlog.processors.JSONRenderer(),
+            foreign_pre_chain=processors,
+            processor=structlog.processors.JSONRenderer(),
         )
 
     # configuration for structlog based loggers
     structlog.configure(
         processors=processors
-        + [structlog.stdlib.ProcessorFormatter.wrap_for_formatter,],
+        + [
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
         logger_factory=structlog.stdlib.LoggerFactory(),
     )
 
@@ -65,6 +71,21 @@ def format_stackdriver(_, __, ed):
     ed["message"] = ed.pop("event")
     ed["severity"] = ed.pop("level", "info").upper()
     return ed
+
+
+def apply_task_context(task, **kwargs):
+    """This clears the current structured logging context and readies it
+    for a new task from `servicelayer.jobs`."""
+    # Setup context for structured logging
+    clear_contextvars()
+    bind_contextvars(
+        job_id=task.job.id,
+        stage=task.stage.stage,
+        dataset=task.job.dataset.name,
+        start_time=time.time(),
+        trace_id=str(uuid.uuid4()),
+        **kwargs
+    )
 
 
 class _MaxLevelFilter(object):

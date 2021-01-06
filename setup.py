@@ -25,7 +25,6 @@ setup(
     install_requires=[
         "banal >= 1.0.1",
         "normality >= 2.1.1",
-        "redis == 3.5.3, <3.6.0",
         "fakeredis == 1.4.5",
         "sqlalchemy >= 1.3",
     ],

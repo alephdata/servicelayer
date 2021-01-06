@@ -2,6 +2,7 @@ import sys
 import signal
 import logging
 from threading import Thread
+from banal import ensure_list
 from abc import ABC, abstractmethod
 
 from servicelayer import settings
@@ -103,6 +104,18 @@ class Worker(ABC):
     def after_task(self, task):
         """Optional hook excuted after handling a task"""
         pass
+
+    def dispatch_pipeline(self, task, payload):
+        """Some queues use a continuation passing style pipeline argument
+        to specify the next steps for a processing chain."""
+        pipeline = ensure_list(task.context.get("pipeline"))
+        if len(pipeline) == 0:
+            return
+        next_stage = pipeline.pop(0)
+        stage = task.job.get_stage(next_stage)
+        context = dict(task.context)
+        context["pipeline"] = pipeline
+        stage.queue(payload, context)
 
     @abstractmethod
     def handle(self, task):
