@@ -43,10 +43,10 @@ def configure_logging(level=logging.INFO):
     )
 
     # handler for low level logs that should be sent to STDOUT
-    info_handler = logging.StreamHandler(sys.stdout)
-    info_handler.setLevel(level)
-    info_handler.addFilter(_MaxLevelFilter(logging.WARNING))
-    info_handler.setFormatter(formatter)
+    out_handler = logging.StreamHandler(sys.stdout)
+    out_handler.setLevel(level)
+    out_handler.addFilter(_MaxLevelFilter(logging.WARNING))
+    out_handler.setFormatter(formatter)
     # handler for high level logs that should be sent to STDERR
     error_handler = logging.StreamHandler(sys.stderr)
     error_handler.setLevel(logging.ERROR)
@@ -56,7 +56,7 @@ def configure_logging(level=logging.INFO):
     root_logger.setLevel(logging.DEBUG)
     # check to prevent adding duplicate handlers
     if not root_logger.handlers:
-        root_logger.addHandler(info_handler)
+        root_logger.addHandler(out_handler)
         root_logger.addHandler(error_handler)
 
 
