@@ -28,6 +28,7 @@ setup(
         "fakeredis == 1.4.5",
         "sqlalchemy >= 1.3",
         "structlog >= 20.2.0, <21.0.0",
+        "colorama >= 0.4.4, < 1.0.0",
     ],
     extras_require={
         "amazon": ["boto3 >= 1.11.9, <2.0.0"],
