@@ -6,6 +6,7 @@ from botocore.exceptions import ClientError
 from servicelayer import settings
 from servicelayer.archive.virtual import VirtualArchive
 from servicelayer.archive.util import checksum, ensure_path
+from servicelayer.archive.util import path_prefix, path_content_hash
 
 log = logging.getLogger(__name__)
 
@@ -71,7 +72,7 @@ class S3Archive(VirtualArchive):
         if prefix is None:
             if content_hash is None:
                 return
-            prefix = self._get_prefix(content_hash)
+            prefix = path_prefix(content_hash)
             if prefix is None:
                 return
         res = self.client.list_objects(MaxKeys=1, Bucket=self.bucket, Prefix=prefix)
@@ -92,7 +93,7 @@ class S3Archive(VirtualArchive):
         if obj is not None:
             return content_hash
 
-        path = "{}/data".format(self._get_prefix(content_hash))
+        path = "{}/data".format(path_prefix(content_hash))
         extra = {}
         if mime_type is not None:
             extra["ContentType"] = mime_type
@@ -112,12 +113,29 @@ class S3Archive(VirtualArchive):
     def delete_file(self, content_hash):
         if content_hash is None:
             return
-        prefix = self._get_prefix(content_hash)
+        prefix = path_prefix(content_hash)
         if prefix is None:
             return
         res = self.client.list_objects(Bucket=self.bucket, Prefix=prefix)
         for obj in res.get("Contents", []):
             self.client.delete_object(Bucket=self.bucket, Key=obj.get("Key"))
+
+    def list_files(self, prefix=None):
+        """Try to list out all the hashes in the archive."""
+        kwargs = {"Bucket": self.bucket}
+        prefix = path_prefix(prefix)
+        if prefix is not None:
+            kwargs["Prefix"] = prefix
+        token = None
+        while True:
+            if token is not None:
+                kwargs["ContinuationToken"] = token
+            res = self.client.list_objects_v2(**kwargs)
+            for obj in res.get("Contents", []):
+                yield path_content_hash(obj.get("Key"))
+            if not res.get("IsTruncated"):
+                break
+            token = res.get("NextContinuationToken")
 
     def generate_url(self, content_hash, file_name=None, mime_type=None, expire=None):
         key = self._locate_key(content_hash)

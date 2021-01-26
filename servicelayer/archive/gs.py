@@ -9,7 +9,9 @@ from google.api_core.exceptions import ServiceUnavailable
 from google.resumable_media.common import DataCorruption, InvalidResponse
 
 from servicelayer.archive.virtual import VirtualArchive
-from servicelayer.archive.util import checksum, ensure_path, ensure_posix_path
+from servicelayer.archive.util import checksum, ensure_path
+from servicelayer.archive.util import path_prefix, ensure_posix_path
+from servicelayer.archive.util import path_content_hash, HASH_LENGTH
 from servicelayer.util import service_retries, backoff
 
 log = logging.getLogger(__name__)
@@ -34,12 +36,17 @@ class GoogleStorageArchive(VirtualArchive):
     @property
     def bucket(self):
         if not hasattr(self.local, "bucket"):
-            client = Client()
-            self.local.bucket = client.lookup_bucket(self._bucket)
+            self.local.bucket = self.client.lookup_bucket(self._bucket)
             if self.bucket is None:
-                self.local.bucket = client.create_bucket(self._bucket)
+                self.local.bucket = self.client.create_bucket(self._bucket)
                 self.upgrade()
         return self.local.bucket
+
+    @property
+    def client(self):
+        if not hasattr(self.local, "client"):
+            self.local.client = Client()
+        return self.local.client
 
     def upgrade(self):
         policy = {
@@ -55,7 +62,7 @@ class GoogleStorageArchive(VirtualArchive):
         """Check if a file with the given hash exists on S3."""
         if content_hash is None:
             return
-        prefix = self._get_prefix(content_hash)
+        prefix = path_prefix(content_hash)
         if prefix is None:
             return
 
@@ -65,7 +72,7 @@ class GoogleStorageArchive(VirtualArchive):
             return blob
 
         # Second, iterate over all file names:
-        for blob in self.bucket.list_blobs(max_results=1, prefix=prefix):
+        for blob in self.client.list_blobs(self.bucket, max_results=1, prefix=prefix):
             return blob
 
     def _locate_key(self, key):
@@ -92,7 +99,7 @@ class GoogleStorageArchive(VirtualArchive):
                 # if blob is not None:
                 #     return content_hash
 
-                path = os.path.join(self._get_prefix(content_hash), "data")
+                path = os.path.join(path_prefix(content_hash), "data")
                 blob = Blob(path, self.bucket)
                 blob.upload_from_filename(file_path, content_type=mime_type)
                 return content_hash
@@ -117,16 +124,23 @@ class GoogleStorageArchive(VirtualArchive):
         # Returns None for "persistent error" as well as "file not found" :/
         log.debug("[%s] not found, or the backend is down.", content_hash)
 
+    def list_files(self, prefix=None):
+        prefix = path_prefix(prefix)
+        if prefix is None:
+            return
+        for blob in self.client.list_blobs(self.bucket, prefix=prefix):
+            yield path_content_hash(blob.name)
+
     def delete_file(self, content_hash):
         """Check if a file with the given hash exists on S3."""
-        if content_hash is None:
+        if content_hash is None or len(content_hash) < HASH_LENGTH:
             return
-        prefix = self._get_prefix(content_hash)
+        prefix = path_prefix(content_hash)
         if prefix is None:
             return
 
         # Iterate over all file names:
-        for blob in self.bucket.list_blobs(max_results=1, prefix=prefix):
+        for blob in self.client.list_blobs(self.bucket, prefix=prefix):
             for attempt in service_retries():
                 try:
                     blob.delete()

@@ -1,7 +1,9 @@
+import os
 from hashlib import sha1
 from pathlib import Path
 
 BUF_SIZE = 1024 * 1024 * 16
+HASH_LENGTH = 40  # sha1
 
 
 def ensure_path(file_path):
@@ -28,3 +30,18 @@ def checksum(file_name):
                     break
                 digest.update(block)
         return str(digest.hexdigest())
+
+
+def path_prefix(content_hash):
+    """Get a prefix for a content hashed folder structure."""
+    if content_hash is None:
+        return None
+    prefix = os.path.join(content_hash[:2], content_hash[2:4], content_hash[4:6])
+    if len(content_hash) >= 6:
+        prefix = os.path.join(prefix, content_hash)
+    return prefix.rstrip(os.path.sep)
+
+
+def path_content_hash(path):
+    _, content_hash, _ = ensure_posix_path(path).rsplit(os.path.sep, 2)
+    return content_hash

@@ -48,6 +48,18 @@ class FileArchiveTest(TestCase):
         path = self.archive.load_file(out)
         assert path.is_file(), path
 
+    def test_list_files(self):
+        keys = list(self.archive.list_files())
+        assert len(keys) == 0, keys
+        out = self.archive.archive_file(self.file)
+        keys = list(self.archive.list_files())
+        assert len(keys) == 1, keys
+        keys = list(self.archive.list_files(prefix=out[:4]))
+        assert len(keys) == 1, keys
+        assert keys[0] == out, keys
+        keys = list(self.archive.list_files(prefix="banana"))
+        assert len(keys) == 0, keys
+
     def test_delete_file(self):
         out = self.archive.archive_file(self.file)
         path = self.archive.load_file(out)

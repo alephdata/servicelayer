@@ -1,15 +1,8 @@
-import os
 import abc
 
 
 class Archive(object):
     __metaclass__ = abc.ABCMeta
-
-    def _get_prefix(self, content_hash):
-        if content_hash is not None:
-            return os.path.join(
-                content_hash[:2], content_hash[2:4], content_hash[4:6], content_hash
-            )
 
     def upgrade(self):
         """Run maintenance on the store."""
@@ -22,6 +15,12 @@ class Archive(object):
 
     @abc.abstractmethod
     def load_file(self, content_hash, file_name=None, temp_path=None):
+        pass
+
+    @abc.abstractmethod
+    def list_files(self, prefix=None):
+        """List files in the archive within the given prefix. Must return an
+        iterator of `content_hash`."""
         pass
 
     @abc.abstractmethod

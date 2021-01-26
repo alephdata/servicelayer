@@ -14,7 +14,7 @@ def to_int(name, default=0):
     """Extract an integer from the environment."""
     try:
         return int(get(name))
-    except Exception:
+    except (TypeError, ValueError):
         return default
 
 
@@ -30,5 +30,5 @@ def to_list(name, default=[], separator=":"):
     """
     value = get(name)
     if value is None:
-        return default
+        return list(default)
     return [e.strip() for e in value.split(separator)]
