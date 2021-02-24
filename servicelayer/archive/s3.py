@@ -14,7 +14,7 @@ log = logging.getLogger(__name__)
 class S3Archive(VirtualArchive):
     TIMEOUT = 84600
 
-    def __init__(self, bucket=None):
+    def __init__(self, bucket=None, publication_bucket=None):
         super(S3Archive, self).__init__(bucket)
         key_id = settings.AWS_KEY_ID
         secret_key = settings.AWS_SECRET_KEY
@@ -27,6 +27,7 @@ class S3Archive(VirtualArchive):
         )
         # config=Config(signature_version='s3v4'))
         self.bucket = bucket
+        self.publication_bucket = publication_bucket
         log.info("Archive: s3://%s", bucket)
 
         try:
@@ -153,4 +154,19 @@ class S3Archive(VirtualArchive):
             expires_in = int(delta.total_seconds())
         return self.client.generate_presigned_url(
             "get_object", Params=params, ExpiresIn=expires_in
+        )
+
+    def publish_file(self, file_path, publish_path, mime_type=None):
+        extra = {"ACL": "public-read"}
+        if mime_type is not None:
+            extra["ContentType"] = mime_type
+        with open(file_path, "rb") as fh:
+            self.client.upload_fileobj(
+                fh, self.publication_bucket, publish_path, ExtraArgs=extra
+            )
+        params = {"Bucket": self.publication_bucket, "Key": publish_path}
+        if mime_type is not None:
+            params["ResponseContentType"] = mime_type
+        return self.client.generate_presigned_url(
+            "get_object", Params=params, ExpiresIn=0
         )

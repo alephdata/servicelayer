@@ -27,11 +27,12 @@ FAILURES = (
 class GoogleStorageArchive(VirtualArchive):
     TIMEOUT = 84600
 
-    def __init__(self, bucket=None):
+    def __init__(self, bucket=None, publication_bucket=None):
         super(GoogleStorageArchive, self).__init__(bucket)
         log.info("Archive: gs://%s", bucket)
         self._bucket = bucket
         self.local = threading.local()
+        self._publication_bucket = publication_bucket
 
     @property
     def bucket(self):
@@ -160,3 +161,10 @@ class GoogleStorageArchive(VirtualArchive):
         return blob.generate_signed_url(
             expire, response_type=mime_type, response_disposition=disposition
         )
+
+    def publish_file(self, file_path, publish_path, mime_type=None):
+        bucket = self.client.bucket(self._publication_bucket)
+        blob = Blob(publish_path, bucket)
+        blob.upload_from_filename(file_path, content_type=mime_type)
+        blob.make_public(client=self.client)
+        return blob.public_url

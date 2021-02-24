@@ -32,3 +32,6 @@ class Archive(object):
 
     def generate_url(self, content_hash, file_name=None, mime_type=None, expire=None):
         return None
+
+    def publish_file(self, file_path, publish_path, bucket=None, mime_type=None):
+        return None

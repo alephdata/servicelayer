@@ -10,7 +10,7 @@ class S3ArchiveTest(TestCase):
     def setUp(self):
         self.mock = mock_s3()
         self.mock.start()
-        self.archive = init_archive("s3", bucket="foo")
+        self.archive = init_archive("s3", bucket="foo", publication_bucket="foo")
         self.file = ensure_path(__file__)
 
     def tearDown(self):
@@ -34,6 +34,10 @@ class S3ArchiveTest(TestCase):
         url = self.archive.generate_url(out)
         # assert False, url
         assert url is not None, url
+
+    def test_publish_file(self):
+        url = self.archive.publish_file(self.file, "self.py", mime_type="text/python")
+        assert "https://foo.s3.amazonaws.com/self.py" in url, url
 
     def test_load_file(self):
         out = self.archive.archive_file(self.file)
