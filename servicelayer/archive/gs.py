@@ -162,6 +162,10 @@ class GoogleStorageArchive(VirtualArchive):
             expire, response_type=mime_type, response_disposition=disposition
         )
 
+    @property
+    def can_publish(self):
+        return True
+
     def publish_file(self, file_path, publish_path, mime_type=None):
         bucket = self.client.bucket(self._publication_bucket)
         blob = Blob(publish_path, bucket)

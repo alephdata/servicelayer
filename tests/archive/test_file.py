@@ -35,6 +35,9 @@ class FileArchiveTest(TestCase):
         url = self.archive.generate_url(out)
         assert url is None, url
 
+    def test_publish(self):
+        assert not self.archive.can_publish
+
     def test_load_file(self):
         out = self.archive.archive_file(self.file)
         path = self.archive.load_file(out)

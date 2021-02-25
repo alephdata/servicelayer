@@ -156,6 +156,10 @@ class S3Archive(VirtualArchive):
             "get_object", Params=params, ExpiresIn=expires_in
         )
 
+    @property
+    def can_publish(self):
+        return True
+
     def publish_file(self, file_path, publish_path, mime_type=None):
         extra = {"ACL": "public-read"}
         if mime_type is not None:

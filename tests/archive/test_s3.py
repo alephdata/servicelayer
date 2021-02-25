@@ -36,6 +36,7 @@ class S3ArchiveTest(TestCase):
         assert url is not None, url
 
     def test_publish_file(self):
+        assert self.archive.can_publish
         url = self.archive.publish_file(self.file, "self.py", mime_type="text/python")
         assert "https://foo.s3.amazonaws.com/self.py" in url, url
 
