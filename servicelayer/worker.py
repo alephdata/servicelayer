@@ -23,7 +23,7 @@ class Worker(ABC):
 
     def _handle_signal(self, signal, frame):
         log.warning("Shutting down worker (signal %s)", signal)
-        self._exit_code = 100 + signal
+        self._exit_code = int(signal)
 
     def handle_safe(self, task):
         try:

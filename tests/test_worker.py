@@ -32,7 +32,9 @@ class WorkerTest(TestCase):
         assert not job.is_done()
         worker.sync()
         assert job.is_done()
+        assert worker._exit_code == 0, worker._exit_code
         assert worker.test_done == 1, worker.test_done
-        worker.shutdown()
+        worker._handle_signal(5, None)
+        assert worker._exit_code == 5, worker._exit_code
         worker.retry(task)
         worker.process()
