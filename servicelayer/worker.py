@@ -1,4 +1,3 @@
-import sys
 import signal
 import logging
 from threading import Thread
@@ -20,26 +19,32 @@ class Worker(ABC):
         self.conn = conn or get_redis()
         self.stages = stages
         self.num_threads = num_threads
-        self._shutdown = False
+        self._exit_code = 0
 
-    def shutdown(self, *args):
-        log.warning("Shutting down worker.")
-        self._shutdown = True
-        if not self.num_threads:
-            sys.exit(23)
+    def _handle_signal(self, signal, frame):
+        log.warning("Shutting down worker (signal %s)", signal)
+        self._exit_code = 100 + signal
 
     def handle_safe(self, task):
         try:
             self.handle(task)
-        except (SystemExit, KeyboardInterrupt, Exception):
+        except SystemExit as exc:
+            self._exit_code = exc.code
             self.retry(task)
-            raise
+        except KeyboardInterrupt:
+            self._exit_code = 23
+            self.retry(task)
+        except Exception:
+            if 0 == self._exit_code:
+                self._exit_code = 23
+            self.retry(task)
+            log.exception("Error in task handling")
         finally:
             task.done()
             self.after_task(task)
 
     def init_internal(self):
-        self._shutdown = False
+        self._exit_code = 0
         self.boot()
 
     def retry(self, task):
@@ -49,10 +54,10 @@ class Worker(ABC):
             task.context["retries"] = retries + 1
             task.stage.queue(task.payload, task.context)
 
-    def process(self, interval=5):
+    def process(self, interval=2):
         while True:
-            if self._shutdown:
-                return
+            if self._exit_code > 0:
+                return self._exit_code
             self.periodic()
             stages = self.get_stages()
             task = Stage.get_task(self.conn, stages, timeout=interval)
@@ -65,16 +70,17 @@ class Worker(ABC):
         go into an infinte loop waiting for new ones."""
         self.init_internal()
         while True:
+            if self._exit_code > 0:
+                return self._exit_code
             stages = self.get_stages()
             task = Stage.get_task(self.conn, stages, timeout=None)
             if task is None:
-                return
+                return 0
             self.handle_safe(task)
 
     def run(self):
-        # Try to quit gracefully, e.g. after finishing the current task.
-        signal.signal(signal.SIGINT, self.shutdown)
-        signal.signal(signal.SIGTERM, self.shutdown)
+        signal.signal(signal.SIGINT, self._handle_signal)
+        signal.signal(signal.SIGTERM, self._handle_signal)
         self.init_internal()
         if not self.num_threads:
             return self.process()
@@ -87,7 +93,7 @@ class Worker(ABC):
             threads.append(thread)
         for thread in threads:
             thread.join()
-        sys.exit(23)
+        return self._exit_code
 
     def get_stages(self):
         """Easily allow the user to make the active stages dynamic."""

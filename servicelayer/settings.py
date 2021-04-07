@@ -2,6 +2,7 @@ import multiprocessing
 from servicelayer import env
 
 # Redis cache
+# URL format: redis://localhost:6379/0
 REDIS_URL = env.get("REDIS_URL")
 REDIS_SHORT = 84700
 REDIS_LONG = REDIS_SHORT * 200
