@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from google.cloud.storage import Blob
 from google.cloud.storage.client import Client
 from google.api_core.exceptions import TooManyRequests, InternalServerError
-from google.api_core.exceptions import ServiceUnavailable
+from google.api_core.exceptions import ServiceUnavailable, NotFound
 from google.resumable_media.common import DataCorruption, InvalidResponse
 
 from servicelayer.archive.virtual import VirtualArchive
@@ -132,6 +132,17 @@ class GoogleStorageArchive(VirtualArchive):
         for blob in self.client.list_blobs(self.bucket, prefix=prefix):
             yield path_content_hash(blob.name)
 
+    def _delete_blob(self, blob):
+        for attempt in service_retries():
+            try:
+                blob.delete()
+                return
+            except NotFound:
+                return
+            except FAILURES:
+                log.exception("Delete error in GS")
+                backoff(failures=attempt)
+
     def delete_file(self, content_hash):
         """Check if a file with the given hash exists on S3."""
         if content_hash is None or len(content_hash) < HASH_LENGTH:
@@ -142,12 +153,7 @@ class GoogleStorageArchive(VirtualArchive):
 
         # Iterate over all file names:
         for blob in self.client.list_blobs(self.bucket, prefix=prefix):
-            for attempt in service_retries():
-                try:
-                    blob.delete()
-                except FAILURES:
-                    log.exception("Delete error in GS")
-                    backoff(failures=attempt)
+            self._delete_blob(blob)
 
     def generate_url(self, content_hash, file_name=None, mime_type=None, expire=None):
         blob = self._locate_contenthash(content_hash)
