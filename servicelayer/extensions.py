@@ -13,10 +13,7 @@ def get_entry_points(section):
         if section not in EXTENSIONS:
             EXTENSIONS[section] = {}
             for ep in iter_entry_points(section):
-                try:
-                    EXTENSIONS[section][ep.name] = ep.load()
-                except Exception:
-                    log.exception("Error loading: %s", ep.name)
+                EXTENSIONS[section][ep.name] = ep.load()
         return EXTENSIONS[section]
 
 
