@@ -1,5 +1,8 @@
 from setuptools import setup, find_packages
 
+with open("README.md") as f:
+    long_description = f.read()
+
 
 setup(
     name="servicelayer",
@@ -16,6 +19,8 @@ setup(
     keywords="storage files s3",
     author="Organized Crime and Corruption Reporting Project",
     author_email="data@occrp.org",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
     url="http://github.com/alephdata/servicelayer",
     license="MIT",
     packages=find_packages(exclude=["ez_setup", "examples", "test"]),
