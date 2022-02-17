@@ -1,5 +1,6 @@
 import signal
 import logging
+import sys
 from threading import Thread
 from banal import ensure_list
 from abc import ABC, abstractmethod
@@ -23,8 +24,10 @@ class Worker(ABC):
         self.exit_code = 0
 
     def _handle_signal(self, signal, frame):
-        log.warning("Shutting down worker (signal %s)", signal)
+        log.warning(f"Shutting down worker (signal {signal})")
         self.exit_code = int(signal)
+        # Exit eagerly without waiting for current task to finish running
+        sys.exit(self.exit_code)
 
     def handle_safe(self, task):
         try:

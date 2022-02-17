@@ -1,4 +1,5 @@
 from unittest import TestCase
+import pytest
 
 from servicelayer.cache import get_fakeredis
 from servicelayer.jobs import Job
@@ -34,8 +35,6 @@ class WorkerTest(TestCase):
         assert job.is_done()
         assert worker.exit_code == 0, worker.exit_code
         assert worker.test_done == 1, worker.test_done
-        worker._handle_signal(5, None)
-        assert worker.exit_code == 5, worker.exit_code
         worker.retry(task)
         worker.run(blocking=False)
         assert job.is_done()
@@ -45,3 +44,9 @@ class WorkerTest(TestCase):
         worker.run(blocking=False)
         assert job.is_done()
         assert worker.exit_code == 0, worker.exit_code
+        try:
+            worker._handle_signal(5, None)
+        except SystemExit as exc:
+            assert exc.code == 5, exc.code
+        with pytest.raises(SystemExit) as exc:  # noqa
+            worker._handle_signal(5, None)
