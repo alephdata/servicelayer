@@ -10,7 +10,13 @@ from servicelayer.cache import get_redis
 from servicelayer.util import unpack_int
 
 log = logging.getLogger(__name__)
+
+# When a worker thread is not blocking, it has to exit if no task is available.
+# `TASK_FETCH_RETRY`` determines how many times the worker thread will try to fetch
+# a task before quitting.
+# `INTERVAL`` determines the interval in seconds between each retry.
 INTERVAL = 2
+TASK_FETCH_RETRY = 60 / INTERVAL
 
 
 class Worker(ABC):
@@ -56,16 +62,25 @@ class Worker(ABC):
             task.stage.queue(task.payload, task.context)
 
     def process(self, blocking=True, interval=INTERVAL):
-        while True:
+        retries = 0
+        while retries <= TASK_FETCH_RETRY:
             if self.exit_code > 0:
+                log.info("Worker thread is exiting")
                 return self.exit_code
             self.periodic()
             stages = self.get_stages()
             task = Stage.get_task(self.conn, stages, timeout=interval)
             if task is None:
                 if not blocking:
-                    return self.exit_code
+                    # If we get a null task, retry to fetch a task a bunch of times before quitting
+                    if retries >= TASK_FETCH_RETRY:
+                        log.info("Worker thread is exiting")
+                        return self.exit_code
+                    else:
+                        retries += 1
                 continue
+            # when we get a good task, reset retry count
+            retries = 0
             self.handle_safe(task)
 
     def sync(self):
