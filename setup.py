@@ -39,7 +39,7 @@ setup(
         "amazon": ["boto3 >= 1.11.9, <2.0.0"],
         "google": [
             "grpcio >= 1.32.0, <2.0.0",
-            "google-cloud-storage >= 1.31.0, <2.0.0",
+            "google-cloud-storage >= 1.31.0, < 3.0.0",
         ],
         "dev": [
             "twine",
