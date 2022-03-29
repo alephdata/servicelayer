@@ -32,3 +32,6 @@ PUBLICATION_BUCKET = env.get("PUBLICATION_BUCKET", ARCHIVE_BUCKET)
 
 # Logging
 LOG_FORMAT = env.get("LOG_FORMAT", "TEXT")  # options are: TEXT or JSON
+
+# Task queue
+RABBITMQ_URL = env.get("RABBITMQ_URL", "rabbitmq")
