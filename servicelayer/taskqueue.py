@@ -142,8 +142,8 @@ def get_task(body, delivery_tag) -> Task:
         job_id=body["job_id"],
         delivery_tag=delivery_tag,
         operation=body["operation"],
-        context=body["context"],
-        payload=body["payload"],
+        context=body["context"] or {},
+        payload=body["payload"] or {},
     )
 
 
