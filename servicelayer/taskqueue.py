@@ -9,10 +9,12 @@ import sys
 
 from structlog.contextvars import clear_contextvars, bind_contextvars
 import pika
+from banal import ensure_list
 
 from servicelayer.cache import get_redis, make_key
 from servicelayer.util import unpack_int
 from servicelayer import settings
+from servicelayer.util import service_retries, backoff
 
 log = logging.getLogger(__name__)
 
@@ -22,6 +24,14 @@ NO_COLLECTION = "null"
 
 QUEUE_ALEPH = "aleph_queue"
 QUEUE_INGEST = "ingest_queue"
+QUEUE_INDEX = "index_queue"
+
+OP_INGEST = "ingest"
+OP_ANALYZE = "analyze"
+OP_INDEX = "index"
+
+# ToDo: consider ALEPH_INGEST_PIPELINE setting
+INGEST_OPS = (OP_INGEST, OP_ANALYZE)
 
 
 @dataclass
@@ -176,16 +186,32 @@ def apply_task_context(task: Task, **kwargs):
     )
 
 
+def get_routing_key(stage):
+    if stage in INGEST_OPS:
+        routing_key = QUEUE_INGEST
+    elif stage == OP_INDEX:
+        routing_key = QUEUE_INDEX
+    else:
+        routing_key = QUEUE_ALEPH
+    return routing_key
+
+
 class Worker:
     def __init__(
-        self, queue_name, conn=None, num_threads=settings.WORKER_THREADS, version=None
+        self,
+        queues,
+        conn=None,
+        num_threads=settings.WORKER_THREADS,
+        version=None,
+        prefetch_count=100,
     ):
         self.conn = conn or get_redis()
         self.num_threads = num_threads
         self.threadlocal = threading.local()
         self.threadlocal._channel = None
-        self.queue_name = queue_name
+        self.queues = ensure_list(queues)
         self.version = version
+        self.prefetch_count = prefetch_count
 
     def on_signal(self, signal, frame):
         log.warning(f"Shutting down worker (signal {signal})")
@@ -193,14 +219,13 @@ class Worker:
         sys.exit(int(signal))
 
     def connect(self):
-        # Pika connections should not be shared between threads. So we use a
-        # threadlocal connection object
-
-        self.threadlocal._connection = pika.BlockingConnection(
-            pika.ConnectionParameters(host=settings.RABBITMQ_URL)
-        )
-        self.threadlocal._channel = self.threadlocal._connection.channel()
-        self.threadlocal._channel.confirm_delivery()
+        # Pika channels should not be shared between threads. So we use a
+        # threadlocal channel object
+        self.threadlocal._channel = get_rabbitmq_channel()
+        self.threadlocal._channel.queue_declare(queue=QUEUE_ALEPH, durable=True)
+        self.threadlocal._channel.queue_declare(queue=QUEUE_INGEST, durable=True)
+        self.threadlocal._channel.queue_declare(queue=QUEUE_INDEX, durable=True)
+        self.threadlocal._channel.basic_qos(prefetch_count=self.prefetch_count)
 
     def on_message(self, _, method, properties, body):
         log.info(f"Received message # {method.delivery_tag}: {body}")
@@ -217,13 +242,11 @@ class Worker:
         while True:
             try:
                 self.connect()
-                self.threadlocal._channel.queue_declare(
-                    queue=self.queue_name, durable=True
-                )
-                self.threadlocal._channel.basic_qos(prefetch_count=1)
-                self.threadlocal._channel.basic_consume(
-                    queue=self.queue_name, on_message_callback=self.on_message
-                )
+                for queue in self.queues:
+                    self.threadlocal._channel.queue_declare(queue=queue, durable=True)
+                    self.threadlocal._channel.basic_consume(
+                        queue=queue, on_message_callback=self.on_message
+                    )
                 self.threadlocal._channel.start_consuming()
             # Don't recover if connection was closed by broker
             except pika.exceptions.ConnectionClosedByBroker:
@@ -239,15 +262,17 @@ class Worker:
         # non-blocking worker is used for tests only. We can go easy on connection recovery
         if not self.threadlocal._channel:
             self.connect()
-        self.threadlocal._channel.queue_declare(queue=self.queue_name, durable=True)
-        self.threadlocal._channel.basic_qos(prefetch_count=1)
+        queue_active = {queue: True for queue in self.queues}
         while True:
-            method, properties, body = self.threadlocal._channel.basic_get(
-                queue=self.queue_name
-            )
-            if method is None:
-                return
-            self.on_message(None, method, properties, body)
+            for queue in self.queues:
+                method, properties, body = self.threadlocal._channel.basic_get(
+                    queue=queue
+                )
+                queue_active[queue] = bool(method)
+                # Quit processing if all queues are inactive
+                if not any(queue_active.values()):
+                    return
+                self.on_message(None, method, properties, body)
 
     def process(self, blocking=True):
         if blocking:
@@ -286,3 +311,18 @@ class Worker:
             threads.append(thread)
         for thread in threads:
             thread.join()
+
+
+def get_rabbitmq_channel():
+    for attempt in service_retries():
+        try:
+            connection = pika.BlockingConnection(
+                pika.ConnectionParameters(host=settings.RABBITMQ_URL)
+            )
+            channel = connection.channel()
+            channel.confirm_delivery()
+            return channel
+        except pika.exceptions.AMQPConnectionError:
+            log.info("Waiting for RabbitMQ to load...")
+            backoff(failures=attempt)
+    raise RuntimeError("RabbitMQ is not ready.")
