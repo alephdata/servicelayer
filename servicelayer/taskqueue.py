@@ -268,11 +268,14 @@ class Worker:
                 method, properties, body = self.threadlocal._channel.basic_get(
                     queue=queue
                 )
-                queue_active[queue] = bool(method)
-                # Quit processing if all queues are inactive
-                if not any(queue_active.values()):
-                    return
-                self.on_message(None, method, properties, body)
+                if method is None:
+                    queue_active[queue] = False
+                    # Quit processing if all queues are inactive
+                    if not any(queue_active.values()):
+                        return
+                else:
+                    queue_active[queue] = True
+                    self.on_message(None, method, properties, body)
 
     def process(self, blocking=True):
         if blocking:
