@@ -6,6 +6,7 @@ import threading
 import signal
 import logging
 import sys
+from abc import ABC, abstractmethod
 
 from structlog.contextvars import clear_contextvars, bind_contextvars
 import pika
@@ -51,7 +52,7 @@ class Task:
         return dataset
 
 
-class Dataset(object):
+class Dataset:
     """Track the status of tasks for a given dataset/collection"""
 
     def __init__(self, conn, name):
@@ -196,7 +197,7 @@ def get_routing_key(stage):
     return routing_key
 
 
-class Worker:
+class Worker(ABC):
     def __init__(
         self,
         queues,
@@ -287,17 +288,27 @@ class Worker:
         # ToDo: handle retries
         try:
             apply_task_context(task, v=self.version)
-            self.dispatch_task(task)
+            task = self.dispatch_task(task)
         except Exception:
             log.exception("Error in task handling")
         finally:
             self.after_task(task)
 
+    @abstractmethod
+    def dispatch_task(self, task: Task) -> Task:
+        raise NotImplementedError
+
     def after_task(self, task):
-        log.info(f"Acknowledging message {task.delivery_tag} {task.task_id}")
-        self.threadlocal._channel.basic_ack(task.delivery_tag)
-        dataset = task.get_dataset(conn=self.conn)
-        dataset.mark_done(task.task_id)
+        skip_ack = task.context.get("skip_ack")
+        if skip_ack:
+            log.info(
+                f"Skipping acknowledging message {task.delivery_tag} {task.task_id}"
+            )
+        else:
+            log.info(f"Acknowledging message {task.delivery_tag} {task.task_id}")
+            dataset = task.get_dataset(conn=self.conn)
+            dataset.mark_done(task.task_id)
+            self.threadlocal._channel.basic_ack(task.delivery_tag)
 
     def run(self, blocking=True, interval=None):
         signal.signal(signal.SIGINT, self.on_signal)
