@@ -214,7 +214,7 @@ class Worker(ABC):
         self.version = version
         self.prefetch_count = prefetch_count
 
-    def on_signal(self, signal, frame):
+    def on_signal(self, signal, _):
         log.warning(f"Shutting down worker (signal {signal})")
         # Exit eagerly without waiting for current task to finish running
         sys.exit(int(signal))
@@ -229,13 +229,13 @@ class Worker(ABC):
         self.threadlocal._channel.basic_qos(prefetch_count=self.prefetch_count)
 
     def on_message(self, _, method, properties, body):
-        log.info(f"Received message # {method.delivery_tag}: {body}")
+        log.debug(f"Received message # {method.delivery_tag}: {body}")
         task = get_task(body, method.delivery_tag)
         dataset = Dataset(
             conn=self.conn, name=dataset_from_collection_id(task.collection_id)
         )
+        dataset.checkout_task(task.task_id)
         if dataset.should_execute(task.task_id):
-            dataset.checkout_task(task.task_id)
             self.handle(task)
 
     def process_blocking(self):
@@ -310,19 +310,57 @@ class Worker(ABC):
             dataset.mark_done(task.task_id)
             self.threadlocal._channel.basic_ack(task.delivery_tag)
 
-    def run(self, blocking=True, interval=None):
+    def cron(self, interval=5):
+        """Run periodic tasks every `interval` seconds
+
+        Args:
+            interval (int, optional): interval between subsequent runs. Defaults to 5.
+        """
+        while True:
+            try:
+                self.periodic()
+                time.sleep(interval)
+            except Exception as ex:
+                log.exception(f"Error while running periodic tasks: {ex}")
+
+    def periodic(self):
+        """Periodic tasks to run."""
+        pass
+
+    def run(self, cron_interval=None):
+        """Run a blocking worker instance
+
+        Args:
+            cron_interval (int, optional): If defined, the worker runs with a cron
+            thread that executes periodic tasks every `cron_interval` seconds. Defaults to None.
+        """
+
+        # Handle kill signals
         signal.signal(signal.SIGINT, self.on_signal)
         signal.signal(signal.SIGTERM, self.on_signal)
-        process = lambda: self.process(blocking=blocking, interval=interval)
-        if not self.num_threads:
-            return process()
-        log.info("Worker has %d threads.", self.num_threads)
+
+        # Regular worker threads
+        process = lambda: self.process(blocking=True)
         threads = []
         for _ in range(self.num_threads):
             thread = threading.Thread(target=process)
             thread.daemon = True
             thread.start()
             threads.append(thread)
+
+        # Cron worker thread
+        if cron_interval:
+            cron = lambda: self.cron(interval=cron_interval)
+            thread = threading.Thread(target=cron)
+            thread.daemon = True
+            thread.start()
+            threads.append(thread)
+            log.info(
+                "Worker has %d worker threads and 1 cron thread.", self.num_threads
+            )
+        else:
+            log.info("Worker has %d worker threads.", self.num_threads)
+
         for thread in threads:
             thread.join()
 
