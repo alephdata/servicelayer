@@ -18,6 +18,7 @@ from servicelayer import settings
 from servicelayer.util import service_retries, backoff
 
 log = logging.getLogger(__name__)
+local = threading.local()
 
 
 PREFIX = "tq"
@@ -208,8 +209,6 @@ class Worker(ABC):
     ):
         self.conn = conn or get_redis()
         self.num_threads = num_threads
-        self.threadlocal = threading.local()
-        self.threadlocal._channel = None
         self.queues = ensure_list(queues)
         self.version = version
         self.prefetch_count = prefetch_count
@@ -218,15 +217,6 @@ class Worker(ABC):
         log.warning(f"Shutting down worker (signal {signal})")
         # Exit eagerly without waiting for current task to finish running
         sys.exit(int(signal))
-
-    def connect(self):
-        # Pika channels should not be shared between threads. So we use a
-        # threadlocal channel object
-        self.threadlocal._channel = get_rabbitmq_channel()
-        self.threadlocal._channel.queue_declare(queue=QUEUE_ALEPH, durable=True)
-        self.threadlocal._channel.queue_declare(queue=QUEUE_INGEST, durable=True)
-        self.threadlocal._channel.queue_declare(queue=QUEUE_INDEX, durable=True)
-        self.threadlocal._channel.basic_qos(prefetch_count=self.prefetch_count)
 
     def on_message(self, _, method, properties, body):
         log.debug(f"Received message # {method.delivery_tag}: {body}")
@@ -241,34 +231,20 @@ class Worker(ABC):
     def process_blocking(self):
         # Recover from connection errors: https://github.com/pika/pika#connection-recovery
         while True:
-            try:
-                self.connect()
-                for queue in self.queues:
-                    self.threadlocal._channel.queue_declare(queue=queue, durable=True)
-                    self.threadlocal._channel.basic_consume(
-                        queue=queue, on_message_callback=self.on_message
-                    )
-                self.threadlocal._channel.start_consuming()
-            # Don't recover if connection was closed by broker
-            except pika.exceptions.ConnectionClosedByBroker:
-                break
-            # Don't recover on channel errors
-            except pika.exceptions.AMQPChannelError:
-                break
-            # Recover on all other connection errors
-            except pika.exceptions.AMQPConnectionError:
-                continue
+            channel = get_rabbitmq_channel()
+            channel.basic_qos(prefetch_count=self.prefetch_count)
+            for queue in self.queues:
+                channel.queue_declare(queue=queue, durable=True)
+                channel.basic_consume(queue=queue, on_message_callback=self.on_message)
+            channel.start_consuming()
 
     def process_nonblocking(self):
         # non-blocking worker is used for tests only. We can go easy on connection recovery
-        if not self.threadlocal._channel:
-            self.connect()
+        channel = get_rabbitmq_channel()
         queue_active = {queue: True for queue in self.queues}
         while True:
             for queue in self.queues:
-                method, properties, body = self.threadlocal._channel.basic_get(
-                    queue=queue
-                )
+                method, properties, body = channel.basic_get(queue=queue)
                 if method is None:
                     queue_active[queue] = False
                     # Quit processing if all queues are inactive
@@ -308,7 +284,8 @@ class Worker(ABC):
             log.info(f"Acknowledging message {task.delivery_tag} {task.task_id}")
             dataset = task.get_dataset(conn=self.conn)
             dataset.mark_done(task.task_id)
-            self.threadlocal._channel.basic_ack(task.delivery_tag)
+            channel = get_rabbitmq_channel()
+            channel.basic_ack(task.delivery_tag)
 
     def cron(self, interval=5):
         """Run periodic tasks every `interval` seconds
@@ -368,13 +345,20 @@ class Worker(ABC):
 def get_rabbitmq_channel():
     for attempt in service_retries():
         try:
-            connection = pika.BlockingConnection(
-                pika.ConnectionParameters(host=settings.RABBITMQ_URL)
-            )
-            channel = connection.channel()
-            channel.confirm_delivery()
-            return channel
-        except pika.exceptions.AMQPConnectionError:
-            log.info("Waiting for RabbitMQ to load...")
+            if not hasattr(local, "channel") or not local.channel:
+                connection = pika.BlockingConnection(
+                    pika.ConnectionParameters(host=settings.RABBITMQ_URL)
+                )
+                channel = connection.channel()
+                channel.confirm_delivery()
+                local.channel = channel
+            # check if channel is active
+            local.channel.queue_declare(queue=QUEUE_ALEPH, durable=True)
+            local.channel.queue_declare(queue=QUEUE_INGEST, durable=True)
+            local.channel.queue_declare(queue=QUEUE_INDEX, durable=True)
+            return local.channel
+        except (pika.exceptions.AMQPConnectionError, pika.exceptions.AMQPError) as exc:
+            log.exception("RabbitMQ error: %s", exc)
+            local.channel = None
             backoff(failures=attempt)
-    raise RuntimeError("RabbitMQ is not ready.")
+    raise RuntimeError("Could not connect to RabbitMQ")
