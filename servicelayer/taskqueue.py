@@ -8,7 +8,7 @@ import logging
 import sys
 from abc import ABC, abstractmethod
 import functools
-import queue
+from queue import Queue, Empty
 
 from structlog.contextvars import clear_contextvars, bind_contextvars
 import pika
@@ -216,7 +216,7 @@ class Worker(ABC):
         self.queues = ensure_list(queues)
         self.version = version
         self.prefetch_count = prefetch_count
-        self.local_queue = queue.Queue()
+        self.local_queue = Queue()
 
     def on_signal(self, signal, _):
         log.warning(f"Shutting down worker (signal {signal})")
@@ -242,7 +242,7 @@ class Worker(ABC):
                 self.handle(task)
                 cb = functools.partial(self.ack_message, task, channel)
                 connection.add_callback_threadsafe(cb)
-            except queue.Empty:
+            except Empty:
                 pass
             finally:
                 self.periodic()
@@ -253,8 +253,8 @@ class Worker(ABC):
         channel = connection.channel()
         queue_active = {queue: True for queue in self.queues}
         while True:
-            for q in self.queues:
-                method, properties, body = channel.basic_get(queue=q)
+            for queue in self.queues:
+                method, properties, body = channel.basic_get(queue=queue)
                 if method is None:
                     queue_active[queue] = False
                     # Quit processing if all queues are inactive
