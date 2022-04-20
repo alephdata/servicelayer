@@ -7,6 +7,8 @@ import signal
 import logging
 import sys
 from abc import ABC, abstractmethod
+import functools
+import queue
 
 from structlog.contextvars import clear_contextvars, bind_contextvars
 import pika
@@ -34,6 +36,8 @@ OP_INDEX = "index"
 
 # ToDo: consider ALEPH_INGEST_PIPELINE setting
 INGEST_OPS = (OP_INGEST, OP_ANALYZE)
+
+TIMEOUT = 5
 
 
 @dataclass
@@ -212,39 +216,45 @@ class Worker(ABC):
         self.queues = ensure_list(queues)
         self.version = version
         self.prefetch_count = prefetch_count
+        self.local_queue = queue.Queue()
 
     def on_signal(self, signal, _):
         log.warning(f"Shutting down worker (signal {signal})")
         # Exit eagerly without waiting for current task to finish running
         sys.exit(int(signal))
 
-    def on_message(self, _, method, properties, body):
-        log.debug(f"Received message # {method.delivery_tag}: {body}")
+    def on_message(self, channel, method, properties, body, args):
+        """RabbitMQ on_message event handler.
+
+        We have to make sure it doesn't block for long to ensure that RabbitMQ
+        heartbeats are not interrupted.
+        """
+        connection = args[0]
+        log.info(f"Received message # {method.delivery_tag}: {body}")
         task = get_task(body, method.delivery_tag)
-        dataset = Dataset(
-            conn=self.conn, name=dataset_from_collection_id(task.collection_id)
-        )
-        dataset.checkout_task(task.task_id)
-        if dataset.should_execute(task.task_id):
-            self.handle(task)
+        self.local_queue.put((task, channel, connection))
 
     def process_blocking(self):
-        # Recover from connection errors: https://github.com/pika/pika#connection-recovery
+        """Blocking worker thread - executes tasks from a queue and periodic tasks"""
         while True:
-            channel = get_rabbitmq_channel()
-            channel.basic_qos(prefetch_count=self.prefetch_count)
-            for queue in self.queues:
-                channel.queue_declare(queue=queue, durable=True)
-                channel.basic_consume(queue=queue, on_message_callback=self.on_message)
-            channel.start_consuming()
+            try:
+                (task, channel, connection) = self.local_queue.get(timeout=TIMEOUT)
+                self.handle(task)
+                cb = functools.partial(self.ack_message, task, channel)
+                connection.add_callback_threadsafe(cb)
+            except queue.Empty:
+                pass
+            finally:
+                self.periodic()
 
     def process_nonblocking(self):
-        # non-blocking worker is used for tests only. We can go easy on connection recovery
-        channel = get_rabbitmq_channel()
+        """Non-blocking worker is used for tests only."""
+        connection = get_rabbitmq_connection()
+        channel = connection.channel()
         queue_active = {queue: True for queue in self.queues}
         while True:
-            for queue in self.queues:
-                method, properties, body = channel.basic_get(queue=queue)
+            for q in self.queues:
+                method, properties, body = channel.basic_get(queue=q)
                 if method is None:
                     queue_active[queue] = False
                     # Quit processing if all queues are inactive
@@ -252,7 +262,8 @@ class Worker(ABC):
                         return
                 else:
                     queue_active[queue] = True
-                    self.on_message(None, method, properties, body)
+                    task = get_task(body, method.delivery_tag)
+                    self.handle(task)
 
     def process(self, blocking=True):
         if blocking:
@@ -260,21 +271,40 @@ class Worker(ABC):
         else:
             self.process_nonblocking()
 
-    def handle(self, task):
+    def handle(self, task: Task):
+        """Execute a task."""
         # ToDo: handle retries
-        try:
-            apply_task_context(task, v=self.version)
-            task = self.dispatch_task(task)
-        except Exception:
-            log.exception("Error in task handling")
-        finally:
-            self.after_task(task)
+        dataset = Dataset(
+            conn=self.conn, name=dataset_from_collection_id(task.collection_id)
+        )
+        dataset.checkout_task(task.task_id)
+        if dataset.should_execute(task.task_id):
+            try:
+                apply_task_context(task, v=self.version)
+                task = self.dispatch_task(task)
+            except Exception:
+                log.exception("Error in task handling")
+            finally:
+                self.after_task(task)
 
     @abstractmethod
     def dispatch_task(self, task: Task) -> Task:
         raise NotImplementedError
 
-    def after_task(self, task):
+    def after_task(self, task: Task):
+        """Run after-task clean up"""
+        pass
+
+    def periodic(self):
+        """Periodic tasks to run."""
+        pass
+
+    def ack_message(self, task, channel):
+        """Acknowledge a task after execution.
+
+        RabbitMQ requires that the channel used for receiving the message must be used
+        for acknowledging a message as well.
+        """
         skip_ack = task.context.get("skip_ack")
         if skip_ack:
             log.info(
@@ -283,40 +313,19 @@ class Worker(ABC):
         else:
             log.info(f"Acknowledging message {task.delivery_tag} {task.task_id}")
             dataset = task.get_dataset(conn=self.conn)
+            # Sync state to redis
             dataset.mark_done(task.task_id)
-            channel = get_rabbitmq_channel()
-            channel.basic_ack(task.delivery_tag)
+            if channel.is_open:
+                channel.basic_ack(task.delivery_tag)
 
-    def cron(self, interval=5):
-        """Run periodic tasks every `interval` seconds
-
-        Args:
-            interval (int, optional): interval between subsequent runs. Defaults to 5.
-        """
-        while True:
-            try:
-                self.periodic()
-                time.sleep(interval)
-            except Exception as ex:
-                log.exception(f"Error while running periodic tasks: {ex}")
-
-    def periodic(self):
-        """Periodic tasks to run."""
-        pass
-
-    def run(self, cron_interval=None):
-        """Run a blocking worker instance
-
-        Args:
-            cron_interval (int, optional): If defined, the worker runs with a cron
-            thread that executes periodic tasks every `cron_interval` seconds. Defaults to None.
-        """
+    def run(self):
+        """Run a blocking worker instance"""
 
         # Handle kill signals
         signal.signal(signal.SIGINT, self.on_signal)
         signal.signal(signal.SIGTERM, self.on_signal)
 
-        # Regular worker threads
+        # worker threads
         process = lambda: self.process(blocking=True)
         threads = []
         for _ in range(self.num_threads):
@@ -325,40 +334,35 @@ class Worker(ABC):
             thread.start()
             threads.append(thread)
 
-        # Cron worker thread
-        if cron_interval:
-            cron = lambda: self.cron(interval=cron_interval)
-            thread = threading.Thread(target=cron)
-            thread.daemon = True
-            thread.start()
-            threads.append(thread)
-            log.info(
-                "Worker has %d worker threads and 1 cron thread.", self.num_threads
-            )
-        else:
-            log.info("Worker has %d worker threads.", self.num_threads)
+        log.info(f"Worker has {self.num_threads} worker threads.")
 
-        for thread in threads:
-            thread.join()
+        connection = get_rabbitmq_connection()
+        channel = connection.channel()
+        channel.basic_qos(prefetch_count=self.prefetch_count)
+        on_message_callback = functools.partial(self.on_message, args=(connection,))
+        for queue in self.queues:
+            channel.queue_declare(queue=queue, durable=True)
+            channel.basic_consume(queue=queue, on_message_callback=on_message_callback)
+        channel.start_consuming()
 
 
-def get_rabbitmq_channel():
+def get_rabbitmq_connection():
     for attempt in service_retries():
         try:
-            if not hasattr(local, "channel") or not local.channel:
+            if not hasattr(local, "connection") or not local.connection:
                 connection = pika.BlockingConnection(
                     pika.ConnectionParameters(host=settings.RABBITMQ_URL)
                 )
-                channel = connection.channel()
-                channel.confirm_delivery()
-                local.channel = channel
-            # check if channel is active
-            local.channel.queue_declare(queue=QUEUE_ALEPH, durable=True)
-            local.channel.queue_declare(queue=QUEUE_INGEST, durable=True)
-            local.channel.queue_declare(queue=QUEUE_INDEX, durable=True)
-            return local.channel
-        except (pika.exceptions.AMQPConnectionError, pika.exceptions.AMQPError) as exc:
-            log.exception("RabbitMQ error: %s", exc)
-            local.channel = None
-            backoff(failures=attempt)
+                local.connection = connection
+            if local.connection.is_open:
+                channel = local.connection.channel()
+                channel.queue_declare(queue=QUEUE_ALEPH, durable=True)
+                channel.queue_declare(queue=QUEUE_INGEST, durable=True)
+                channel.queue_declare(queue=QUEUE_INDEX, durable=True)
+                channel.close()
+                return local.connection
+        except (pika.exceptions.AMQPConnectionError, pika.exceptions.AMQPError):
+            log.exception("RabbitMQ error")
+        local.connection = None
+        backoff(failures=attempt)
     raise RuntimeError("Could not connect to RabbitMQ")
