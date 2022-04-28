@@ -26,9 +26,6 @@ local = threading.local()
 PREFIX = "tq"
 NO_COLLECTION = "null"
 
-QUEUE_ALEPH = "aleph_queue"
-QUEUE_INGEST = "ingest_queue"
-QUEUE_INDEX = "index_queue"
 
 OP_INGEST = "ingest"
 OP_ANALYZE = "analyze"
@@ -194,11 +191,11 @@ def apply_task_context(task: Task, **kwargs):
 
 def get_routing_key(stage):
     if stage in INGEST_OPS:
-        routing_key = QUEUE_INGEST
+        routing_key = settings.QUEUE_INGEST
     elif stage == OP_INDEX:
-        routing_key = QUEUE_INDEX
+        routing_key = settings.QUEUE_INDEX
     else:
-        routing_key = QUEUE_ALEPH
+        routing_key = settings.QUEUE_ALEPH
     return routing_key
 
 
@@ -356,9 +353,9 @@ def get_rabbitmq_connection():
                 local.connection = connection
             if local.connection.is_open:
                 channel = local.connection.channel()
-                channel.queue_declare(queue=QUEUE_ALEPH, durable=True)
-                channel.queue_declare(queue=QUEUE_INGEST, durable=True)
-                channel.queue_declare(queue=QUEUE_INDEX, durable=True)
+                channel.queue_declare(queue=settings.QUEUE_ALEPH, durable=True)
+                channel.queue_declare(queue=settings.QUEUE_INGEST, durable=True)
+                channel.queue_declare(queue=settings.QUEUE_INDEX, durable=True)
                 channel.close()
                 return local.connection
         except (pika.exceptions.AMQPConnectionError, pika.exceptions.AMQPError):
