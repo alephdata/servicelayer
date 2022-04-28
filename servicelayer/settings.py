@@ -35,3 +35,6 @@ LOG_FORMAT = env.get("LOG_FORMAT", "TEXT")  # options are: TEXT or JSON
 
 # Task queue
 RABBITMQ_URL = env.get("RABBITMQ_URL", "rabbitmq")
+QUEUE_ALEPH = "aleph_queue"
+QUEUE_INGEST = "ingest_queue"
+QUEUE_INDEX = "index_queue"
