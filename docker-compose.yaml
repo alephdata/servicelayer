@@ -1,0 +1,14 @@
+version: "3.2"
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.9-management-alpine
+
+  shell:
+    build:
+      context: .
+    command: /bin/bash
+    volumes:
+      - ".:/opt/servicelayer"
+    depends_on:
+      - rabbitmq
