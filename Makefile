@@ -6,7 +6,7 @@ install:
 	pip install -q twine coverage nose moto boto3
 
 test:
-	pytest --cov=servicelayer
+	docker-compose run --rm shell pytest --cov=servicelayer
 
 build:
 	python setup.py sdist bdist_wheel
