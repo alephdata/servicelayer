@@ -3,10 +3,13 @@ import pytest
 
 from servicelayer.cache import get_fakeredis
 from servicelayer.jobs import Job
-from servicelayer.worker import Worker
+from servicelayer import worker
 
 
-class CountingWorker(Worker):
+worker.TASK_FETCH_RETRY = 1
+
+
+class CountingWorker(worker.Worker):
     def boot(self):
         self.test_done = 0
 
