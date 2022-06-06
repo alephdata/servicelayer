@@ -347,8 +347,13 @@ def get_rabbitmq_connection():
     for attempt in service_retries():
         try:
             if not hasattr(local, "connection") or not local.connection:
+                credentials = pika.PlainCredentials(
+                    settings.RABBITMQ_USERNAME, settings.RABBITMQ_PASSWORD
+                )
                 connection = pika.BlockingConnection(
-                    pika.ConnectionParameters(host=settings.RABBITMQ_URL)
+                    pika.ConnectionParameters(
+                        host=settings.RABBITMQ_URL, credentials=credentials
+                    )
                 )
                 local.connection = connection
             if local.connection.is_open:
