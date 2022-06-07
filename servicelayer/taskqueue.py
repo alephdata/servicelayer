@@ -227,7 +227,6 @@ class Worker(ABC):
         heartbeats are not interrupted.
         """
         connection = args[0]
-        log.info(f"Received message # {method.delivery_tag}: {body}")
         task = get_task(body, method.delivery_tag)
         self.local_queue.put((task, channel, connection))
 
@@ -236,6 +235,7 @@ class Worker(ABC):
         while True:
             try:
                 (task, channel, connection) = self.local_queue.get(timeout=TIMEOUT)
+                apply_task_context(task, v=self.version)
                 self.handle(task)
                 cb = functools.partial(self.ack_message, task, channel)
                 connection.add_callback_threadsafe(cb)
@@ -277,7 +277,6 @@ class Worker(ABC):
         dataset.checkout_task(task.task_id)
         if dataset.should_execute(task.task_id):
             try:
-                apply_task_context(task, v=self.version)
                 task = self.dispatch_task(task)
             except Exception:
                 log.exception("Error in task handling")
@@ -305,10 +304,12 @@ class Worker(ABC):
         skip_ack = task.context.get("skip_ack")
         if skip_ack:
             log.info(
-                f"Skipping acknowledging message {task.delivery_tag} {task.task_id}"
+                f"Skipping acknowledging message {task.delivery_tag} for task_id {task.task_id}"
             )
         else:
-            log.info(f"Acknowledging message {task.delivery_tag} {task.task_id}")
+            log.info(
+                f"Acknowledging message {task.delivery_tag} for task_id {task.task_id}"
+            )
             dataset = task.get_dataset(conn=self.conn)
             # Sync state to redis
             dataset.mark_done(task.task_id)
