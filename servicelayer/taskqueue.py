@@ -352,7 +352,10 @@ def get_rabbitmq_connection():
                 )
                 connection = pika.BlockingConnection(
                     pika.ConnectionParameters(
-                        host=settings.RABBITMQ_URL, credentials=credentials
+                        host=settings.RABBITMQ_URL,
+                        credentials=credentials,
+                        heartbeat=settings.RABBITMQ_HEARTBEAT,
+                        blocked_connection_timeout=settings.RABBITMQ_BLOCKED_CONNECTION_TIMEOUT,
                     )
                 )
                 local.connection = connection
