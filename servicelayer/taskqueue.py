@@ -101,6 +101,21 @@ class Dataset:
             result["datasets"][dataset.name] = status
         return result
 
+    @classmethod
+    def cleanup_dataset_status(cls, conn):
+        """Clean up dataset status for inactive datasets."""
+        datasets_key = make_key(PREFIX, "qdatasets")
+        for name in conn.smembers(datasets_key):
+            dataset = cls(conn, name)
+            status = dataset.get_status()
+            if status["running"] == 0 and status["pending"] == 0:
+                pipe = conn.pipeline()
+                # remove the dataset from active datasets
+                pipe.srem(dataset.key, dataset.name)
+                # reset finished task count
+                pipe.delete(dataset.finished_key)
+                pipe.execute()
+
     def should_execute(self, task_id):
         """Should a task be executed?
 
