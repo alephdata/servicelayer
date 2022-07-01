@@ -136,6 +136,7 @@ class Dataset:
 
     def checkout_task(self, task_id):
         """Update state when a task is checked out for execution"""
+        log.info(f"Checking out task: {task_id}")
         pipe = self.conn.pipeline()
         # add the dataset to active datasets
         pipe.sadd(self.key, self.name)
@@ -145,15 +146,16 @@ class Dataset:
 
     def mark_done(self, task_id):
         """Update state when a task is finished executing"""
-        status = self.get_status()
+        log.info(f"Finished executing task: {task_id}")
         pipe = self.conn.pipeline()
-        if status["running"] == 0 and status["pending"] == 0:
-            # remove the dataset from active datasets
-            pipe.srem(self.key, self.name)
         pipe.srem(self.pending_key, task_id)
         pipe.srem(self.running_key, task_id)
         pipe.incr(self.finished_key)
         pipe.execute()
+        status = self.get_status()
+        if status["running"] == 0 and status["pending"] == 0:
+            # remove the dataset from active datasets
+            pipe.srem(self.key, self.name)
 
     def is_done(self):
         status = self.get_status()
