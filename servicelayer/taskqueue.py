@@ -150,6 +150,7 @@ class Dataset:
         if status["running"] == 0 and status["pending"] == 0:
             # remove the dataset from active datasets
             pipe.srem(self.key, self.name)
+        pipe.srem(self.pending_key, task_id)
         pipe.srem(self.running_key, task_id)
         pipe.incr(self.finished_key)
         pipe.execute()
