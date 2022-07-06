@@ -155,7 +155,7 @@ class Dataset:
         status = self.get_status()
         if status["running"] == 0 and status["pending"] == 0:
             # remove the dataset from active datasets
-            pipe.srem(self.key, self.name)
+            self.conn.srem(self.key, self.name)
 
     def is_done(self):
         status = self.get_status()
@@ -260,6 +260,7 @@ class Worker(ABC):
             except Empty:
                 pass
             finally:
+                clear_contextvars()
                 self.periodic()
 
     def process_nonblocking(self):
@@ -319,6 +320,7 @@ class Worker(ABC):
         RabbitMQ requires that the channel used for receiving the message must be used
         for acknowledging a message as well.
         """
+        apply_task_context(task, v=self.version)
         skip_ack = task.context.get("skip_ack")
         if skip_ack:
             log.info(
@@ -333,6 +335,7 @@ class Worker(ABC):
             dataset.mark_done(task.task_id)
             if channel.is_open:
                 channel.basic_ack(task.delivery_tag)
+        clear_contextvars()
 
     def run(self):
         """Run a blocking worker instance"""
