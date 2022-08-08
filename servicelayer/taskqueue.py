@@ -47,6 +47,18 @@ class Task:
     payload: dict
     collection_id: Optional[str] = None
 
+    @property
+    def retry_key(self):
+        dataset = dataset_from_collection_id(self.collection_id)
+        return make_key(PREFIX, "qdj", dataset, "taskretry", self.task_id)
+
+    def get_retry_count(self, conn):
+        return unpack_int(conn.get(self.retry_key))
+
+    def increment_retry_count(self, conn):
+        conn.incr(self.retry_key)
+        conn.expire(self.retry_key, settings.REDIS_EXPIRE)
+
     def get_dataset(self, conn):
         dataset = Dataset(
             conn=conn, name=dataset_from_collection_id(self.collection_id)
@@ -144,13 +156,14 @@ class Dataset:
         pipe.sadd(self.running_key, task_id)
         pipe.execute()
 
-    def mark_done(self, task_id):
+    def mark_done(self, task: Task):
         """Update state when a task is finished executing"""
-        log.info(f"Finished executing task: {task_id}")
+        log.info(f"Finished executing task: {task.task_id}")
         pipe = self.conn.pipeline()
-        pipe.srem(self.pending_key, task_id)
-        pipe.srem(self.running_key, task_id)
+        pipe.srem(self.pending_key, task.task_id)
+        pipe.srem(self.running_key, task.task_id)
         pipe.incr(self.finished_key)
+        pipe.delete(task.retry_key)
         pipe.execute()
         status = self.get_status()
         if status["running"] == 0 and status["pending"] == 0:
@@ -215,6 +228,10 @@ def get_routing_key(stage):
     else:
         routing_key = settings.QUEUE_ALEPH
     return routing_key
+
+
+class MaxRetriesExceededError(Exception):
+    pass
 
 
 class Worker(ABC):
@@ -289,18 +306,22 @@ class Worker(ABC):
 
     def handle(self, task: Task):
         """Execute a task."""
-        # ToDo: handle retries
-        dataset = Dataset(
-            conn=self.conn, name=dataset_from_collection_id(task.collection_id)
-        )
-        if dataset.should_execute(task.task_id):
-            try:
+        try:
+            dataset = Dataset(
+                conn=self.conn, name=dataset_from_collection_id(task.collection_id)
+            )
+            if dataset.should_execute(task.task_id):
+                if task.get_retry_count(self.conn) > settings.WORKER_RETRY:
+                    raise MaxRetriesExceededError(
+                        f"Max retries reached for task {task.task_id}. Aborting."
+                    )
                 dataset.checkout_task(task.task_id)
+                task.increment_retry_count(self.conn)
                 task = self.dispatch_task(task)
-            except Exception:
-                log.exception("Error in task handling")
-            finally:
-                self.after_task(task)
+        except Exception:
+            log.exception("Error in task handling")
+        finally:
+            self.after_task(task)
 
     @abstractmethod
     def dispatch_task(self, task: Task) -> Task:
@@ -332,7 +353,7 @@ class Worker(ABC):
             )
             dataset = task.get_dataset(conn=self.conn)
             # Sync state to redis
-            dataset.mark_done(task.task_id)
+            dataset.mark_done(task)
             if channel.is_open:
                 channel.basic_ack(task.delivery_tag)
         clear_contextvars()
