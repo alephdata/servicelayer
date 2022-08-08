@@ -1,4 +1,5 @@
 from unittest import TestCase
+from unittest.mock import patch
 import json
 
 
@@ -63,6 +64,25 @@ class TaskQueueTest(TestCase):
         assert status["pending"] == 0, status
         assert status["running"] == 1, status
         assert worker.test_done == 1
+        task = Task(**body, delivery_tag=None)
+        assert task.get_retry_count(conn) == 1
+
+        with patch("servicelayer.settings.WORKER_RETRY", 0):
+            channel = connection.channel()
+            channel.queue_purge(settings.QUEUE_INGEST)
+            channel.basic_publish(
+                exchange="",
+                routing_key=settings.QUEUE_INGEST,
+                body=json.dumps(body),
+            )
+            dataset = Dataset(conn=conn, name=dataset_from_collection_id(collection_id))
+            dataset.add_task(task_id)
+            channel.close()
+            with self.assertLogs(level="ERROR") as ctx:
+                worker.process(blocking=False)
+            assert "Max retries reached for task test-task. Aborting." in ctx.output[0]
+            # Assert that retry count stays the same
+            assert task.get_retry_count(conn) == 1
 
         worker.ack_message(worker.test_task, channel)
         status = dataset.get_status()
