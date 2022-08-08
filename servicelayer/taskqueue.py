@@ -293,9 +293,9 @@ class Worker(ABC):
         dataset = Dataset(
             conn=self.conn, name=dataset_from_collection_id(task.collection_id)
         )
-        dataset.checkout_task(task.task_id)
         if dataset.should_execute(task.task_id):
             try:
+                dataset.checkout_task(task.task_id)
                 task = self.dispatch_task(task)
             except Exception:
                 log.exception("Error in task handling")
