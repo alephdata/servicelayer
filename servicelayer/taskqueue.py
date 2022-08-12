@@ -147,6 +147,15 @@ class Dataset:
         pipe.sadd(self.pending_key, task_id)
         pipe.execute()
 
+    def remove_task(self, task_id):
+        """Remove a task that's not going to be executed"""
+        log.info(f"Removing task: {task_id}")
+        self.conn.srem(self.pending_key, task_id)
+        status = self.get_status()
+        if status["running"] == 0 and status["pending"] == 0:
+            # remove the dataset from active datasets
+            self.conn.srem(self.key, self.name)
+
     def checkout_task(self, task_id):
         """Update state when a task is checked out for execution"""
         log.info(f"Checking out task: {task_id}")
