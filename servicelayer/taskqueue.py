@@ -140,6 +140,7 @@ class Dataset:
 
     def add_task(self, task_id):
         """Update state when a new task is added to the task queue"""
+        log.info(f"Adding task: {task_id}")
         pipe = self.conn.pipeline()
         # add the dataset to active datasets
         pipe.sadd(self.key, self.name)
