@@ -134,9 +134,20 @@ class Dataset:
         When a the processing of a task is cancelled, there is no way to tell RabbitMQ to drop it.
         So we store that state in Redis and make the worker check with Redis before executing a task.
         """
-        return self.conn.sismember(self.pending_key, task_id) or self.conn.sismember(
-            self.running_key, task_id
-        )
+        for attempt in range(settings.WORKER_RETRY):
+            _should_execute = self.conn.sismember(
+                self.pending_key, task_id
+            ) or self.conn.sismember(self.running_key, task_id)
+            if not _should_execute:
+                # Sometimes for new tasks the check fails because the Redis
+                # state gets updated only after the task gets written to disk
+                # by RabbitMQ whereas the worker consumer gets the task before
+                # that.
+                # Retry a few times to avoid those cases.
+                backoff(failures=attempt)
+            else:
+                break
+        return _should_execute
 
     def add_task(self, task_id):
         """Update state when a new task is added to the task queue"""
