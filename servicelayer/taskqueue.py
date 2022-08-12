@@ -318,6 +318,8 @@ class Worker(ABC):
                 dataset.checkout_task(task.task_id)
                 task.increment_retry_count(self.conn)
                 task = self.dispatch_task(task)
+            else:
+                log.warn(f"Discarding task: {task.task_id}")
         except Exception:
             log.exception("Error in task handling")
         finally:
