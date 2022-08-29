@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from random import random
 from typing import Optional
 import json
 import time
@@ -33,8 +34,6 @@ OP_INDEX = "index"
 
 # ToDo: consider ALEPH_INGEST_PIPELINE setting
 INGEST_OPS = (OP_INGEST, OP_ANALYZE)
-
-TIMEOUT = 5
 
 
 @dataclass
@@ -77,28 +76,37 @@ class Dataset:
         self.finished_key = make_key(PREFIX, "qdj", name, "finished")
         # sets that contain task ids of running and pending tasks
         self.running_key = make_key(PREFIX, "qdj", name, "running")
-        self.pending_key = make_key(PREFIX, "qdj", name, "pending")
 
     def cancel(self):
         """Cancel processing of all tasks belonging to a dataset"""
+        connection = get_rabbitmq_connection()
+        channel = connection.channel()
+        queue_name = f"dataset_{self.name}"
+        channel.queue_delete(queue_name)
         pipe = self.conn.pipeline()
         # remove the dataset from active datasets
         pipe.srem(self.key, self.name)
         # clean up tasks and task counts
         pipe.delete(self.finished_key)
         pipe.delete(self.running_key)
-        pipe.delete(self.pending_key)
         pipe.execute()
 
     def get_status(self):
         """Status of a given dataset."""
+        connection = get_rabbitmq_connection()
+        channel = connection.channel()
+        queue_name = f"dataset_{self.name}"
+        queue = channel.queue_declare(queue=queue_name, durable=True)
+
         status = {"finished": 0, "running": 0, "pending": 0}
         finished = self.conn.get(self.finished_key)
         running = self.conn.scard(self.running_key)
-        pending = self.conn.scard(self.pending_key)
+        pending = queue.method.message_count
         status["finished"] = max(0, unpack_int(finished))
         status["running"] = max(0, unpack_int(running))
         status["pending"] = max(0, unpack_int(pending))
+
+        channel.close()
         return status
 
     @classmethod
@@ -114,6 +122,12 @@ class Dataset:
         return result
 
     @classmethod
+    def choose_random_dataset(cls, conn):
+        datasets_key = make_key(PREFIX, "qdatasets")
+        active_datasets = conn.smembers(datasets_key)
+        return random.choice(active_datasets)
+
+    @classmethod
     def cleanup_dataset_status(cls, conn):
         """Clean up dataset status for inactive datasets."""
         datasets_key = make_key(PREFIX, "qdatasets")
@@ -121,6 +135,11 @@ class Dataset:
             dataset = cls(conn, name)
             status = dataset.get_status()
             if status["running"] == 0 and status["pending"] == 0:
+                # Clean up the rabbitmq queue
+                connection = get_rabbitmq_connection()
+                channel = connection.channel()
+                queue_name = f"dataset_{name}"
+                channel.queue_delete(queue_name, if_empty=True)
                 pipe = conn.pipeline()
                 # remove the dataset from active datasets
                 pipe.srem(dataset.key, dataset.name)
@@ -128,45 +147,11 @@ class Dataset:
                 pipe.delete(dataset.finished_key)
                 pipe.execute()
 
-    def should_execute(self, task_id):
-        """Should a task be executed?
-
-        When a the processing of a task is cancelled, there is no way to tell RabbitMQ to drop it.
-        So we store that state in Redis and make the worker check with Redis before executing a task.
-        """
-        attempt = 1
-        while True:
-            _should_execute = self.conn.sismember(
-                self.pending_key, task_id
-            ) or self.conn.sismember(self.running_key, task_id)
-            if not _should_execute and attempt < settings.WORKER_RETRY:
-                # Sometimes for new tasks the check fails because the Redis
-                # state gets updated only after the task gets written to disk
-                # by RabbitMQ whereas the worker consumer gets the task before
-                # that.
-                # Retry a few times to avoid those cases.
-                backoff(failures=attempt)
-                attempt += 1
-                continue
-            return _should_execute
-
     def add_task(self, task_id):
         """Update state when a new task is added to the task queue"""
         log.info(f"Adding task: {task_id}")
-        pipe = self.conn.pipeline()
         # add the dataset to active datasets
-        pipe.sadd(self.key, self.name)
-        pipe.sadd(self.pending_key, task_id)
-        pipe.execute()
-
-    def remove_task(self, task_id):
-        """Remove a task that's not going to be executed"""
-        log.info(f"Removing task: {task_id}")
-        self.conn.srem(self.pending_key, task_id)
-        status = self.get_status()
-        if status["running"] == 0 and status["pending"] == 0:
-            # remove the dataset from active datasets
-            self.conn.srem(self.key, self.name)
+        self.conn.sadd(self.key, self.name)
 
     def checkout_task(self, task_id):
         """Update state when a task is checked out for execution"""
@@ -174,7 +159,6 @@ class Dataset:
         pipe = self.conn.pipeline()
         # add the dataset to active datasets
         pipe.sadd(self.key, self.name)
-        pipe.srem(self.pending_key, task_id)
         pipe.sadd(self.running_key, task_id)
         pipe.execute()
 
@@ -182,7 +166,6 @@ class Dataset:
         """Update state when a task is finished executing"""
         log.info(f"Finished executing task: {task.task_id}")
         pipe = self.conn.pipeline()
-        pipe.srem(self.pending_key, task.task_id)
         pipe.srem(self.running_key, task.task_id)
         pipe.incr(self.finished_key)
         pipe.delete(task.retry_key)
@@ -287,11 +270,57 @@ class Worker(ABC):
         task = get_task(body, method.delivery_tag)
         self.local_queue.put((task, channel, connection))
 
+    def shovel_tasks(self):
+        """Move tasks from pending state in dataset queues to running state
+        in task type based queues.
+        """
+        try:
+            dataset_id = Dataset.choose_random_dataset(self.conn)
+            log.debug(f"Choosing tasks from dataset {dataset_id}")
+            queue_name = f"dataset_{dataset_id}"
+            connection = get_rabbitmq_connection()
+            channel = connection.channel()
+            channel.confirm_delivery()
+
+            # Get ten messages and break out
+            for method_frame, properties, body in channel.consume(queue_name):
+                channel.basic_publish(
+                    exchange="",
+                    routing_key=get_routing_key(body["operation"]),
+                    body=json.dumps(body),
+                    properties=pika.BasicProperties(
+                        delivery_mode=pika.spec.PERSISTENT_DELIVERY_MODE
+                    ),
+                    mandatory=True,
+                )
+
+                # Acknowledge the message
+                channel.basic_ack(method_frame.delivery_tag)
+
+                dataset = Dataset(conn=self.conn, name=body["collection_id"])
+                dataset.checkout_task(body["task_id"])
+
+                # Escape out of the loop after a batch
+                if method_frame.delivery_tag >= settings.TASK_QUEUE_SHOVEL_BATCH_SIZE:
+                    log.debug("Shoved a batch. Exiting.")
+                    break
+
+            # Cancel the consumer and return any pending messages
+            channel.cancel()
+            channel.close()
+        except pika.exceptions.NackError:
+            log.debug("Queue is full.")
+        except Exception:
+            log.exception("Error while moving tasks")
+
     def process_blocking(self):
         """Blocking worker thread - executes tasks from a queue and periodic tasks"""
         while True:
+            self.shovel_tasks()
             try:
-                (task, channel, connection) = self.local_queue.get(timeout=TIMEOUT)
+                (task, channel, connection) = self.local_queue.get(
+                    timeout=settings.TASK_QUEUE_TIMEOUT
+                )
                 apply_task_context(task, v=self.version)
                 self.handle(task)
                 cb = functools.partial(self.ack_message, task, channel)
@@ -309,6 +338,7 @@ class Worker(ABC):
         queue_active = {queue: True for queue in self.queues}
         while True:
             for queue in self.queues:
+                self.shovel_tasks()
                 method, properties, body = channel.basic_get(queue=queue)
                 if method is None:
                     queue_active[queue] = False
@@ -332,16 +362,13 @@ class Worker(ABC):
             dataset = Dataset(
                 conn=self.conn, name=dataset_from_collection_id(task.collection_id)
             )
-            if dataset.should_execute(task.task_id):
-                if task.get_retry_count(self.conn) > settings.WORKER_RETRY:
-                    raise MaxRetriesExceededError(
-                        f"Max retries reached for task {task.task_id}. Aborting."
-                    )
-                dataset.checkout_task(task.task_id)
-                task.increment_retry_count(self.conn)
-                task = self.dispatch_task(task)
-            else:
-                log.warn(f"Discarding task: {task.task_id}")
+            if task.get_retry_count(self.conn) > settings.WORKER_RETRY:
+                raise MaxRetriesExceededError(
+                    f"Max retries reached for task {task.task_id}. Aborting."
+                )
+            dataset.checkout_task(task.task_id)
+            task.increment_retry_count(self.conn)
+            task = self.dispatch_task(task)
         except Exception:
             log.exception("Error in task handling")
         finally:
@@ -405,7 +432,14 @@ class Worker(ABC):
         channel.basic_qos(prefetch_count=self.prefetch_count)
         on_message_callback = functools.partial(self.on_message, args=(connection,))
         for queue in self.queues:
-            channel.queue_declare(queue=queue, durable=True)
+            channel.queue_declare(
+                queue=queue,
+                durable=True,
+                arguments={
+                    "x-max-length": settings.TASK_QUEUE_MAX_SIZE,
+                    "x-overflow": "reject-publish",
+                },
+            )
             channel.basic_consume(queue=queue, on_message_callback=on_message_callback)
         channel.start_consuming()
 
@@ -428,9 +462,19 @@ def get_rabbitmq_connection():
                 local.connection = connection
             if local.connection.is_open:
                 channel = local.connection.channel()
-                channel.queue_declare(queue=settings.QUEUE_ALEPH, durable=True)
-                channel.queue_declare(queue=settings.QUEUE_INGEST, durable=True)
-                channel.queue_declare(queue=settings.QUEUE_INDEX, durable=True)
+                for queue in (
+                    settings.QUEUE_ALEPH,
+                    settings.QUEUE_INDEX,
+                    settings.QUEUE_INGEST,
+                ):
+                    channel.queue_declare(
+                        queue=queue,
+                        durable=True,
+                        arguments={
+                            "x-max-length": settings.TASK_QUEUE_MAX_SIZE,
+                            "x-overflow": "reject-publish",
+                        },
+                    )
                 channel.close()
                 return local.connection
         except (pika.exceptions.AMQPConnectionError, pika.exceptions.AMQPError):
