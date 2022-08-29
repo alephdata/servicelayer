@@ -32,7 +32,7 @@ setup(
         "normality >= 2.1.1, <3.0.0",
         "fakeredis == 1.9.0",
         "sqlalchemy >= 1.3",
-        "structlog >= 20.2.0, < 22.0.0",
+        "structlog >= 20.2.0, < 23.0.0",
         "colorama >= 0.4.4, < 1.0.0",
         "pika == 1.2.0",
     ],
