@@ -44,6 +44,7 @@ class TaskQueueTest(TestCase):
         }
         connection = get_rabbitmq_connection()
         channel = connection.channel()
+        channel.queue_declare(queue=dataset_queue, durable=True)
         channel.queue_purge(dataset_queue)
         channel.queue_purge(settings.QUEUE_ALEPH)
         channel.basic_publish(
