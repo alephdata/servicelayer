@@ -1,6 +1,7 @@
 from unittest import TestCase
 from unittest.mock import patch
 import json
+import logging
 
 
 from servicelayer import settings
@@ -14,6 +15,9 @@ from servicelayer.taskqueue import (
 )
 
 
+log = logging.getLogger(__name__)
+
+
 class CountingWorker(Worker):
     def dispatch_task(self, task):
         assert isinstance(task, Task), task
@@ -25,7 +29,8 @@ class CountingWorker(Worker):
 
 class TaskQueueTest(TestCase):
     def test_task_queue(self):
-        settings.QUEUE_INGEST = "sls-queue-ingest"
+        settings.QUEUE_ALEPH = "sls-queue-aleph"
+        dataset_queue = "dataset_2"
         conn = get_fakeredis()
         collection_id = 2
         task_id = "test-task"
@@ -39,10 +44,11 @@ class TaskQueueTest(TestCase):
         }
         connection = get_rabbitmq_connection()
         channel = connection.channel()
-        channel.queue_purge(settings.QUEUE_INGEST)
+        channel.queue_purge(dataset_queue)
+        channel.queue_purge(settings.QUEUE_ALEPH)
         channel.basic_publish(
             exchange="",
-            routing_key=settings.QUEUE_INGEST,
+            routing_key=dataset_queue,
             body=json.dumps(body),
         )
         dataset = Dataset(conn=conn, name=dataset_from_collection_id(collection_id))
@@ -54,9 +60,7 @@ class TaskQueueTest(TestCase):
         assert status["pending"] == 1, status
         assert status["running"] == 0, status
 
-        worker = CountingWorker(
-            queues=[settings.QUEUE_INGEST], conn=conn, num_threads=1
-        )
+        worker = CountingWorker(queues=[settings.QUEUE_ALEPH], conn=conn, num_threads=1)
         worker.process(blocking=False)
 
         status = dataset.get_status()
@@ -69,10 +73,10 @@ class TaskQueueTest(TestCase):
 
         with patch("servicelayer.settings.WORKER_RETRY", 0):
             channel = connection.channel()
-            channel.queue_purge(settings.QUEUE_INGEST)
+            channel.queue_purge(settings.QUEUE_ALEPH)
             channel.basic_publish(
                 exchange="",
-                routing_key=settings.QUEUE_INGEST,
+                routing_key=settings.QUEUE_ALEPH,
                 body=json.dumps(body),
             )
             dataset = Dataset(conn=conn, name=dataset_from_collection_id(collection_id))

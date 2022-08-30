@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from random import random
+import random
 from typing import Optional
 import json
 import time
@@ -125,7 +125,7 @@ class Dataset:
     def choose_random_dataset(cls, conn):
         datasets_key = make_key(PREFIX, "qdatasets")
         active_datasets = conn.smembers(datasets_key)
-        return random.choice(active_datasets)
+        return random.choice(tuple(active_datasets))
 
     @classmethod
     def cleanup_dataset_status(cls, conn):
@@ -283,7 +283,13 @@ class Worker(ABC):
             channel.confirm_delivery()
 
             # Get ten messages and break out
-            for method_frame, properties, body in channel.consume(queue_name):
+            for method_frame, properties, body in channel.consume(
+                queue_name, inactivity_timeout=settings.TASK_QUEUE_TIMEOUT
+            ):
+                if body is None:
+                    # no more tasks available
+                    break
+                body = json.loads(body)
                 channel.basic_publish(
                     exchange="",
                     routing_key=get_routing_key(body["operation"]),

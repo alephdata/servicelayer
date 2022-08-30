@@ -45,7 +45,7 @@ QUEUE_ALEPH = "aleph_queue"
 QUEUE_INGEST = "ingest_queue"
 QUEUE_INDEX = "index_queue"
 
-TASK_QUEUE_TIMEOUT = env.get("TASK_QUEUE_TIMEOUT", 5)
-TASK_QUEUE_SHOVEL_BATCH_SIZE = env.get("TASK_QUEUE_SHOVEL_BATCH_SIZE", 50)
+TASK_QUEUE_TIMEOUT = env.to_int("TASK_QUEUE_TIMEOUT", 5)
+TASK_QUEUE_SHOVEL_BATCH_SIZE = env.to_int("TASK_QUEUE_SHOVEL_BATCH_SIZE", 50)
 # max size of task type based queues where running tasks are stored
-TASK_QUEUE_MAX_SIZE = env.get("TASK_QUEUE_MAX_SIZE", 200)
+TASK_QUEUE_MAX_SIZE = env.to_int("TASK_QUEUE_MAX_SIZE", 200)
