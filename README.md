@@ -1,6 +1,6 @@
 # servicelayer
 
-[![Build Status](https://travis-ci.org/alephdata/servicelayer.png?branch=master)](https://travis-ci.org/alephdata/servicelayer)
+[![servicelayer](https://github.com/alephdata/servicelayer/actions/workflows/build.yml/badge.svg)](https://github.com/alephdata/servicelayer/actions/workflows/build.yml)
 
 Components of the aleph data toolkit needed to interact with networked services,
 such as a storage archive, job queueing, cache, and structured logging. This
