@@ -1,6 +1,9 @@
 
 all: clean install test
 
+build-docker:
+	docker-compose build --no-rm --parallel
+
 install:
 	pip install -q -e .
 	pip install -q twine coverage nose moto boto3
