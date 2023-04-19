@@ -8,12 +8,12 @@ RUN apt-get -qq -y update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-RUN pip install --no-binary=:pyicu: pyicu
+RUN pip3 install --no-binary=:pyicu: pyicu
 
 ENV LANG='en_US.UTF-8'
 
 COPY . /opt/servicelayer
-RUN pip3 install -q --no-cache-dir -e /opt/servicelayer[dev]
 WORKDIR /opt/servicelayer
+RUN pip3 install -q --no-cache-dir -e /opt/servicelayer[dev]
 
 CMD /bin/bash

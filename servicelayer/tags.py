@@ -22,7 +22,7 @@ class Tags(object):
         self.is_postgres = self.engine.dialect.name == "postgresql"
         self.table = Table(
             name,
-            MetaData(self.engine),
+            MetaData(),
             Column("key", String, primary_key=True),  # noqa
             Column("value", JSONB if self.is_postgres else JSON),
             Column("timestamp", DateTime),
@@ -36,27 +36,31 @@ class Tags(object):
             stmt = stmt.where(self.table.c.key == key)
         if prefix is not None:
             stmt = stmt.where(self.table.c.key.startswith(prefix))
-        self.engine.execute(stmt)
+        with self.engine.connect() as conn:
+            conn.execute(stmt)
+            conn.commit()
 
     def close(self):
         self.engine.dispose()
 
     def get(self, key, since=None):
-        stmt = select([self.table.c.value])
+        stmt = select(self.table.c.value)
         stmt = stmt.where(self.table.c.key == key)
         if since is not None:
             stmt = stmt.where(self.table.c.timestamp >= since)
-        rp = self.engine.execute(stmt)
+        with self.engine.connect() as conn:
+            rp = conn.execute(stmt)
         row = rp.fetchone()
         if row is not None:
             return row.value
 
     def exists(self, key, since=None):
-        stmt = select([func.count()])
+        stmt = select(func.count())
         stmt = stmt.where(self.table.c.key == key)
         if since is not None:
             stmt = stmt.where(self.table.c.timestamp >= since)
-        rp = self.engine.execute(stmt)
+        with self.engine.connect() as conn:
+            rp = conn.execute(stmt)
         count = rp.scalar()
         return count > 0
 
