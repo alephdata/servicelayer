@@ -1,6 +1,6 @@
 banal==1.0.6
 normality==2.4.0
-fakeredis==1.10.1
+fakeredis==2.11.0
 sqlalchemy==2.0.4
 structlog==22.3.0
 colorama==0.4.6
