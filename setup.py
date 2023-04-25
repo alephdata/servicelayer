@@ -28,13 +28,13 @@ setup(
     include_package_data=True,
     zip_safe=True,
     install_requires=[
-        "banal >= 1.0.1, <2.0.0",
-        "normality >= 2.1.1, <3.0.0",
-        "fakeredis == 1.10.1",
-        "sqlalchemy >= 1.3",
+        "banal >= 1.0.6, < 2.0.0",
+        "normality >= 2.4.0, < 3.0.0",
+        "fakeredis == 1.10.1, < 2.0.0",
+        "sqlalchemy >= 2.0.4, < 3.0.0",
         "structlog >= 20.2.0, < 23.0.0",
         "colorama >= 0.4.4, < 1.0.0",
-        "pika == 1.3.1",
+        "pika >= 1.3.1, < 2.0.0"
     ],
     extras_require={
         "amazon": ["boto3 >= 1.11.9, <2.0.0"],
