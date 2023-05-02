@@ -12,3 +12,15 @@ using environment variables.
 This library provides a configurable method for file storage used by aleph and
 memorious. It will store files based on their content hash (SHA1) and allows for
 later retrieval of the content.
+
+
+## Release procedure
+
+
+```
+git pull --rebase
+make build-docker test
+bump2version --no-commit --dry-run --verbose {patch,minor,major} # to test if this looks good
+bump2version --verbose {patch,minor,major}
+git push --atomic origin main $(git describe --tags --abrev=0)
+```
