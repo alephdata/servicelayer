@@ -22,5 +22,5 @@ git pull --rebase
 make build-docker test
 bump2version --no-commit --dry-run --verbose {patch,minor,major} # to test if this looks good
 bump2version --verbose {patch,minor,major}
-git push --atomic origin main $(git describe --tags --abrev=0)
+git push --atomic origin main $(git describe --tags --abbrev=0)
 ```
