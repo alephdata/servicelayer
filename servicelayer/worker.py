@@ -23,11 +23,28 @@ TASK_FETCH_RETRY = 60 / INTERVAL
 class Worker(ABC):
     """Workers of all microservices, unite!"""
 
-    def __init__(self, conn=None, stages=None, num_threads=settings.WORKER_THREADS):
+    def __init__(
+        self,
+        conn=None,
+        stages=None,
+        num_threads=settings.WORKER_THREADS,
+        sentry_dsn=settings.SENTRY_DSN,
+        sentry_environment=None,
+    ):
         self.conn = conn or get_redis()
         self.stages = stages
         self.num_threads = num_threads
         self.exit_code = 0
+        if sentry_dsn:
+            import sentry_sdk
+
+            sentry_sdk.init(
+                dsn=sentry_dsn,
+                traces_sample_rate=0,
+                release=settings.SENTRY_RELEASE,
+                environment=sentry_environment,
+                send_default_pii=False,
+            )
 
     def _handle_signal(self, signal, frame):
         log.warning(f"Shutting down worker (signal {signal})")

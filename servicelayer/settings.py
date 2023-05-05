@@ -44,3 +44,8 @@ RABBITMQ_BLOCKED_CONNECTION_TIMEOUT = env.to_int(
 QUEUE_ALEPH = "aleph_queue"
 QUEUE_INGEST = "ingest_queue"
 QUEUE_INDEX = "index_queue"
+
+# Sentry
+SENTRY_DSN = env.get("SENTRY_DSN")
+SENTRY_ENVIRONMENT = env.get("SENTRY_ENVIRONMENT")
+SENTRY_RELEASE = env.get("SENTRY_RELEASE")
