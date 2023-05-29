@@ -8,8 +8,22 @@ install:
 	pip install -q -e .
 	pip install -q twine coverage nose moto boto3
 
+dev:
+	python3 -m pip install --upgrade pip
+	python3 -m pip install -q -r requirements.txt
+	python3 -m pip install -q -r requirements-dev.txt
+
 test:
 	docker-compose run --rm shell pytest --cov=servicelayer
+
+lint:
+	ruff check .
+
+format:
+	black .
+
+format-check:
+	black --check .
 
 build:
 	python setup.py sdist bdist_wheel
