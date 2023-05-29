@@ -13,6 +13,9 @@ install:
 test:
 	docker-compose run --rm shell pytest --cov=servicelayer
 
+shell:
+	docker-compose run --rm shell
+
 build:
 	python3 setup.py sdist bdist_wheel
 
