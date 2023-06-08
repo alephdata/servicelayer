@@ -131,8 +131,9 @@ class Dataset:
     def should_execute(self, task_id):
         """Should a task be executed?
 
-        When a the processing of a task is cancelled, there is no way to tell RabbitMQ to drop it.
-        So we store that state in Redis and make the worker check with Redis before executing a task.
+        When a the processing of a task is cancelled, there is no way
+        to tell RabbitMQ to drop it. So we store that state in Redis
+        and make the worker check with Redis before executing a task.
         """
         attempt = 1
         while True:
@@ -369,7 +370,8 @@ class Worker(ABC):
         skip_ack = task.context.get("skip_ack")
         if skip_ack:
             log.info(
-                f"Skipping acknowledging message {task.delivery_tag} for task_id {task.task_id}"
+                f"Skipping acknowledging message {task.delivery_tag}"
+                "for task_id {task.task_id}"
             )
         else:
             log.info(
@@ -390,7 +392,9 @@ class Worker(ABC):
         signal.signal(signal.SIGTERM, self.on_signal)
 
         # worker threads
-        process = lambda: self.process(blocking=True)
+        def process():
+            return self.process(blocking=True)
+
         threads = []
         for _ in range(self.num_threads):
             thread = threading.Thread(target=process)

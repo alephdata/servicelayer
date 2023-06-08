@@ -24,8 +24,12 @@ jobs:
         sudo rm -f /etc/boto.cfg
         sudo apt-get -qq update
         sudo apt-get install -y libicu-dev
-        pip install pytest pytest-env pytest-cov pytest-mock wheel
+        make dev
         pip install -e ".[dev]"
+    - name: Run the code format check
+      run: make format-check
+    - name: Run the linter
+      run: make lint
     - name: Run the tests
       run: |
         make test

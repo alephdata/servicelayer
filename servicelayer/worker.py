@@ -90,7 +90,8 @@ class Worker(ABC):
             task = Stage.get_task(self.conn, stages, timeout=interval)
             if task is None:
                 if not blocking:
-                    # If we get a null task, retry to fetch a task a bunch of times before quitting
+                    # If we get a null task, retry to fetch a task
+                    # a bunch of times before quitting
                     if retries >= TASK_FETCH_RETRY:
                         log.info("Worker thread is exiting")
                         return self.exit_code
@@ -111,7 +112,10 @@ class Worker(ABC):
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
         self.init_internal()
-        process = lambda: self.process(blocking=blocking, interval=interval)
+
+        def process():
+            return self.process(blocking=blocking, interval=interval)
+
         if not self.num_threads:
             return process()
         log.info("Worker has %d threads.", self.num_threads)

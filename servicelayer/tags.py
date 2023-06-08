@@ -83,7 +83,10 @@ class Tags(object):
         istmt = upsert(self.table).values(row)
         stmt = istmt.on_conflict_do_update(
             index_elements=["key"],
-            set_=dict(value=istmt.excluded.value, timestamp=istmt.excluded.timestamp,),
+            set_=dict(
+                value=istmt.excluded.value,
+                timestamp=istmt.excluded.timestamp,
+            ),
         )
         conn.execute(stmt)
 
