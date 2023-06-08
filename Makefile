@@ -1,6 +1,8 @@
 
 all: clean install test
 
+.PHONY: build
+
 build-docker:
 	docker-compose build --no-rm --parallel
 
@@ -11,8 +13,11 @@ install:
 test:
 	docker-compose run --rm shell pytest --cov=servicelayer
 
+shell:
+	docker-compose run --rm shell
+
 build:
-	python setup.py sdist bdist_wheel
+	python3 setup.py sdist bdist_wheel
 
 release: clean build
 	twine upload dist/*
