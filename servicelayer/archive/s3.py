@@ -16,14 +16,18 @@ class S3Archive(VirtualArchive):
 
     def __init__(self, bucket=None, publication_bucket=None):
         super(S3Archive, self).__init__(bucket)
-        key_id = settings.AWS_KEY_ID
-        secret_key = settings.AWS_SECRET_KEY
+        key_args = {}
+        # If key id and secret key are present, use them to instantiate an s3 client.
+        # Otherwise assume we're running on EC2 with a role that has access to the archive bucket.
+        if settings.AWS_KEY_ID and settings.AWS_SECRET_KEY:
+            key_args["key_id"] = settings.AWS_KEY_ID
+            key_args["secret_key"] = settings.AWS_SECRET_KEY
+
         self.client = boto3.client(
             "s3",
             endpoint_url=settings.ARCHIVE_ENDPOINT_URL,
             region_name=settings.AWS_REGION,
-            aws_access_key_id=key_id,
-            aws_secret_access_key=secret_key,
+            **key_args
         )
         # config=Config(signature_version='s3v4'))
         self.bucket = bucket
