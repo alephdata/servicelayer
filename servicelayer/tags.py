@@ -18,7 +18,7 @@ class Tags(object):
 
     def __init__(self, name, uri=settings.TAGS_DATABASE_URI, **config):
         self.name = name
-        self.engine = create_engine(uri, **config)
+        self.engine = create_engine(uri, future=True, **config)
         self.is_postgres = self.engine.dialect.name == "postgresql"
         self.table = Table(
             name,
