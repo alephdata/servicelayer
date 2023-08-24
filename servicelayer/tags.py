@@ -50,7 +50,7 @@ class Tags(object):
             stmt = stmt.where(self.table.c.timestamp >= since)
         with self.engine.connect() as conn:
             rp = conn.execute(stmt)
-        row = rp.fetchone()
+            row = rp.fetchone()
         if row is not None:
             return row.value
 
@@ -61,7 +61,7 @@ class Tags(object):
             stmt = stmt.where(self.table.c.timestamp >= since)
         with self.engine.connect() as conn:
             rp = conn.execute(stmt)
-        count = rp.scalar()
+            count = rp.scalar()
         return count > 0
 
     def _store_values(self, conn, row):
