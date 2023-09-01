@@ -1,5 +1,5 @@
 black==23.3.0
-ruff==0.0.270
+ruff==0.0.286
 pytest==7.3.1
 pytest-env==0.8.1
 pytest-cov==4.1.0
