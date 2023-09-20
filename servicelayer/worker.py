@@ -1,9 +1,12 @@
 import signal
 import logging
+from timeit import default_timer
 import sys
 from threading import Thread
 from banal import ensure_list
 from abc import ABC, abstractmethod
+
+from prometheus_client import start_http_server, Counter, Histogram
 
 from servicelayer import settings
 from servicelayer.jobs import Stage
@@ -18,6 +21,47 @@ log = logging.getLogger(__name__)
 # `INTERVAL`` determines the interval in seconds between each retry.
 INTERVAL = 2
 TASK_FETCH_RETRY = 60 / INTERVAL
+
+TASK_STARTED = Counter(
+    "task_started_total",
+    "Number of tasks that a worker started processing",
+    ["stage"],
+)
+
+TASK_SUCCEEDED = Counter(
+    "task_succeeded_total",
+    "Number of successfully processed tasks",
+    ["stage", "retries"],
+)
+
+TASK_FAILED = Counter(
+    "task_failed_total",
+    "Number of failed tasks",
+    ["stage", "retries", "failed_permanently"],
+)
+
+TASK_DURATION = Histogram(
+    "task_duration_seconds",
+    "Task duration in seconds",
+    ["stage"],
+    # The bucket sizes are a rough guess right now, we might want to adjust
+    # them later based on observed runtimes
+    buckets=[
+        0.25,
+        0.5,
+        1,
+        5,
+        15,
+        30,
+        60,
+        60 * 15,
+        60 * 30,
+        60 * 60,
+        60 * 60 * 2,
+        60 * 60 * 6,
+        60 * 60 * 24,
+    ],
+)
 
 
 class Worker(ABC):
@@ -51,8 +95,15 @@ class Worker(ABC):
         sys.exit(self.exit_code)
 
     def handle_safe(self, task):
+        retries = unpack_int(task.context.get("retries"))
+
         try:
+            TASK_STARTED.labels(task.stage.stage).inc()
+            start_time = default_timer()
             self.handle(task)
+            duration = max(0, default_timer() - start_time)
+            TASK_DURATION.labels(task.stage.stage).observe(duration)
+            TASK_SUCCEEDED.labels(task.stage.stage, retries).inc()
         except SystemExit as exc:
             self.exit_code = exc.code
             self.retry(task)
@@ -72,12 +123,28 @@ class Worker(ABC):
         self.exit_code = 0
         self.boot()
 
+    def run_prometheus_server(self):
+        if not settings.PROMETHEUS_ENABLED:
+            return
+
+        def run_server():
+            port = settings.PROMETHEUS_PORT
+            log.info(f"Running Prometheus metrics server on port {port}")
+            start_http_server(port)
+
+        thread = Thread(target=run_server)
+        thread.start()
+        thread.join()
+
     def retry(self, task):
         retries = unpack_int(task.context.get("retries"))
         if retries < settings.WORKER_RETRY:
             log.warning("Queue failed task for re-try...")
+            TASK_FAILED.labels(task.stage.stage, retries, False).inc()
             task.context["retries"] = retries + 1
             task.stage.queue(task.payload, task.context)
+        else:
+            TASK_FAILED.labels(task.stage.stage, retries, True).inc()
 
     def process(self, blocking=True, interval=INTERVAL):
         retries = 0
@@ -112,6 +179,7 @@ class Worker(ABC):
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
         self.init_internal()
+        self.run_prometheus_server()
 
         def process():
             return self.process(blocking=blocking, interval=interval)
