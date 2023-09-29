@@ -409,7 +409,7 @@ class Worker(ABC):
         channel.basic_qos(prefetch_count=self.prefetch_count)
         on_message_callback = functools.partial(self.on_message, args=(connection,))
         for queue in self.queues:
-            channel.queue_declare(queue=queue, durable=True)
+            channel.queue_declare(queue=queue, durable=True, arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY})
             channel.basic_consume(queue=queue, on_message_callback=on_message_callback)
         channel.start_consuming()
 
@@ -432,9 +432,9 @@ def get_rabbitmq_connection():
                 local.connection = connection
             if local.connection.is_open:
                 channel = local.connection.channel()
-                channel.queue_declare(queue=settings.QUEUE_ALEPH, durable=True)
-                channel.queue_declare(queue=settings.QUEUE_INGEST, durable=True)
-                channel.queue_declare(queue=settings.QUEUE_INDEX, durable=True)
+                channel.queue_declare(queue=settings.QUEUE_ALEPH, durable=True, arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY})
+                channel.queue_declare(queue=settings.QUEUE_INGEST, durable=True, arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY})
+                channel.queue_declare(queue=settings.QUEUE_INDEX, durable=True, arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY})
                 channel.close()
                 return local.connection
         except (pika.exceptions.AMQPConnectionError, pika.exceptions.AMQPError):
