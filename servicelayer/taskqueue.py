@@ -45,6 +45,7 @@ class Task:
     operation: str
     context: dict
     payload: dict
+    priority: int
     collection_id: Optional[str] = None
 
     @property
@@ -211,6 +212,7 @@ def get_task(body, delivery_tag) -> Task:
         operation=body["operation"],
         context=body["context"] or {},
         payload=body["payload"] or {},
+        priority=body["priority"] or 0,
     )
 
 
