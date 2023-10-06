@@ -7,6 +7,7 @@ from structlog.contextvars import merge_contextvars
 from structlog.contextvars import clear_contextvars, bind_contextvars
 
 from servicelayer import settings
+from servicelayer.util import unpack_int
 
 LOG_FORMAT_TEXT = "TEXT"
 LOG_FORMAT_JSON = "JSON"
@@ -84,6 +85,7 @@ def apply_task_context(task, **kwargs):
         dataset=task.job.dataset.name,
         start_time=time.time(),
         trace_id=str(uuid.uuid4()),
+        retry=unpack_int(task.context.get("retries")),
         **kwargs
     )
 
