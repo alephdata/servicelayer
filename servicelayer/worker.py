@@ -77,7 +77,7 @@ class Worker(ABC):
         if retries < settings.WORKER_RETRY:
             retry_count = retries + 1
             log.warning(
-                f"Queueing failed task for retry #{retry_count}/{settings.WORKER_RETRY}..."
+                f"Queueing failed task for retry #{retry_count}/{settings.WORKER_RETRY}..."  # noqa
             )
             task.context["retries"] = retry_count
             task.stage.queue(task.payload, task.context)
