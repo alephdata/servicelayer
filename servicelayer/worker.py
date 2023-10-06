@@ -75,9 +75,14 @@ class Worker(ABC):
     def retry(self, task):
         retries = unpack_int(task.context.get("retries"))
         if retries < settings.WORKER_RETRY:
-            log.warning("Queue failed task for re-try...")
-            task.context["retries"] = retries + 1
+            retry_count = retries + 1
+            log.warning(
+                f"Queueing failed task for retry #{retry_count}/{settings.WORKER_RETRY}..."
+            )
+            task.context["retries"] = retry_count
             task.stage.queue(task.payload, task.context)
+        else:
+            log.warning(f"Failed task, exhausted retry count of {settings.WORKER_RETRY}")
 
     def process(self, blocking=True, interval=INTERVAL):
         retries = 0
