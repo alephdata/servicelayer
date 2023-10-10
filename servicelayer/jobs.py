@@ -53,10 +53,8 @@ class Dataset(object):
             status["finished"] += progress["finished"]
             status["running"] += progress["running"]
             status["pending"] += progress["pending"]
-        import pprint
-
-        print(f"SERVICELAYER status:\n")
-        pprint.pprint(status)
+        log.critical(f"SERVICELAYER status:\n")
+        log.critical(status)
         return status
 
     def __str__(self):
