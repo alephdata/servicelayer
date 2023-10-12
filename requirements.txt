@@ -1,5 +1,5 @@
 banal==1.0.6
-normality==2.4.0
+normality==2.5.0
 fakeredis==2.19.0
 sqlalchemy==2.0.4
 structlog==23.2.0
