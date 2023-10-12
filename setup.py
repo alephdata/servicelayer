@@ -6,7 +6,7 @@ with open("README.md") as f:
 
 setup(
     name="servicelayer",
-    version="1.21.0",
+    version="1.21.2",
     description="Basic remote service functions for alephdata components",
     classifiers=[
         "Development Status :: 3 - Alpha",
@@ -30,8 +30,9 @@ setup(
     install_requires=[
         "banal >= 1.0.6, < 2.0.0",
         "normality >= 2.4.0, < 3.0.0",
-        "fakeredis >=2.11.2, < 3.0.0",
-        "sqlalchemy >= 2.0.4, < 3.0.0",
+        "fakeredis >= 2.11.2, < 3.0.0",
+        "redis <= 4.6.0",
+        "sqlalchemy >= 1.4.49, < 3.0.0",
         "structlog >= 20.2.0, < 24.0.0",
         "colorama >= 0.4.4, < 1.0.0",
         "pika >= 1.3.1, < 2.0.0",

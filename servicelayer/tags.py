@@ -18,7 +18,7 @@ class Tags(object):
 
     def __init__(self, name, uri=settings.TAGS_DATABASE_URI, **config):
         self.name = name
-        self.engine = create_engine(uri, **config)
+        self.engine = create_engine(uri, future=True, **config)
         self.is_postgres = self.engine.dialect.name == "postgresql"
         self.table = Table(
             name,
@@ -50,7 +50,7 @@ class Tags(object):
             stmt = stmt.where(self.table.c.timestamp >= since)
         with self.engine.connect() as conn:
             rp = conn.execute(stmt)
-        row = rp.fetchone()
+            row = rp.fetchone()
         if row is not None:
             return row.value
 
@@ -61,7 +61,7 @@ class Tags(object):
             stmt = stmt.where(self.table.c.timestamp >= since)
         with self.engine.connect() as conn:
             rp = conn.execute(stmt)
-        count = rp.scalar()
+            count = rp.scalar()
         return count > 0
 
     def _store_values(self, conn, row):

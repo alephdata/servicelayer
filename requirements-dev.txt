@@ -1,7 +1,7 @@
-black==23.3.0
-ruff==0.0.270
-pytest==7.3.1
-pytest-env==0.8.1
+black==23.9.1
+ruff==0.0.292
+pytest==7.4.2
+pytest-env==1.0.1
 pytest-cov==4.1.0
 pytest-mock==3.11.1
-wheel==0.40.0
+wheel==0.41.2
