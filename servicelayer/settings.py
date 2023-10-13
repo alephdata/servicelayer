@@ -49,3 +49,7 @@ QUEUE_INDEX = "index_queue"
 SENTRY_DSN = env.get("SENTRY_DSN")
 SENTRY_ENVIRONMENT = env.get("SENTRY_ENVIRONMENT", "")
 SENTRY_RELEASE = env.get("SENTRY_RELEASE", "")
+
+# Instrumentation
+PROMETHEUS_ENABLED = env.to_bool("PROMETHEUS_ENABLED", False)
+PROMETHEUS_PORT = env.to_int("PROMETHEUS_PORT", 9090)
