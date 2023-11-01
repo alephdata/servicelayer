@@ -36,7 +36,7 @@ setup(
         "structlog >= 20.2.0, < 24.0.0",
         "colorama >= 0.4.4, < 1.0.0",
         "pika >= 1.3.1, < 2.0.0",
-        "prometheus-client >= 0.17.1, < 0.18.0",
+        "prometheus-client >= 0.17.1, < 0.19.0",
     ],
     extras_require={
         "amazon": ["boto3 >= 1.11.9, <2.0.0"],
