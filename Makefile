@@ -11,7 +11,7 @@ install:
 	pip install -q twine coverage nose moto boto3
 
 dev:
-	python3 -m pip install --upgrade pip
+	python3 -m pip install --upgrade pip setuptools
 	python3 -m pip install -q -r requirements.txt
 	python3 -m pip install -q -r requirements-dev.txt
 
