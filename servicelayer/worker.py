@@ -6,7 +6,14 @@ from threading import Thread
 from banal import ensure_list
 from abc import ABC, abstractmethod
 
-from prometheus_client import start_http_server, Counter, Histogram
+from prometheus_client import (
+    start_http_server,
+    Counter,
+    Histogram,
+    REGISTRY,
+    GC_COLLECTOR,
+    PROCESS_COLLECTOR,
+)
 
 from servicelayer import settings
 from servicelayer.jobs import Stage
@@ -21,6 +28,9 @@ log = logging.getLogger(__name__)
 # `INTERVAL`` determines the interval in seconds between each retry.
 INTERVAL = 2
 TASK_FETCH_RETRY = 60 / INTERVAL
+
+REGISTRY.unregister(GC_COLLECTOR)
+REGISTRY.unregister(PROCESS_COLLECTOR)
 
 TASK_STARTED = Counter(
     "task_started_total",
