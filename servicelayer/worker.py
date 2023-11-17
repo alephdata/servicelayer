@@ -32,26 +32,26 @@ TASK_FETCH_RETRY = 60 / INTERVAL
 REGISTRY.unregister(GC_COLLECTOR)
 REGISTRY.unregister(PROCESS_COLLECTOR)
 
-TASK_STARTED = Counter(
-    "task_started_total",
+TASKS_STARTED = Counter(
+    "servicelayer_tasks_started_total",
     "Number of tasks that a worker started processing",
     ["stage"],
 )
 
-TASK_SUCCEEDED = Counter(
-    "task_succeeded_total",
+TASKS_SUCCEEDED = Counter(
+    "servicelayer_tasks_succeeded_total",
     "Number of successfully processed tasks",
     ["stage", "retries"],
 )
 
-TASK_FAILED = Counter(
-    "task_failed_total",
+TASKS_FAILED = Counter(
+    "servicelayer_tasks_failed_total",
     "Number of failed tasks",
     ["stage", "retries", "failed_permanently"],
 )
 
 TASK_DURATION = Histogram(
-    "task_duration_seconds",
+    "servicelayer_task_duration_seconds",
     "Task duration in seconds",
     ["stage"],
     # The bucket sizes are a rough guess right now, we might want to adjust
@@ -108,12 +108,12 @@ class Worker(ABC):
         retries = unpack_int(task.context.get("retries"))
 
         try:
-            TASK_STARTED.labels(task.stage.stage).inc()
+            TASKS_STARTED.labels(task.stage.stage).inc()
             start_time = default_timer()
             self.handle(task)
             duration = max(0, default_timer() - start_time)
             TASK_DURATION.labels(task.stage.stage).observe(duration)
-            TASK_SUCCEEDED.labels(task.stage.stage, retries).inc()
+            TASKS_SUCCEEDED.labels(task.stage.stage, retries).inc()
         except SystemExit as exc:
             self.exit_code = exc.code
             self.retry(task)
@@ -153,14 +153,14 @@ class Worker(ABC):
             log.warning(
                 f"Queueing failed task for retry #{retry_count}/{settings.WORKER_RETRY}..."  # noqa
             )
-            TASK_FAILED.labels(task.stage.stage, retries, False).inc()
+            TASKS_FAILED.labels(task.stage.stage, retries, False).inc()
             task.context["retries"] = retry_count
             task.stage.queue(task.payload, task.context)
         else:
             log.warning(
                 f"Failed task, exhausted retry count of {settings.WORKER_RETRY}"
             )
-            TASK_FAILED.labels(task.stage.stage, retries, True).inc()
+            TASKS_FAILED.labels(task.stage.stage, retries, True).inc()
 
     def process(self, blocking=True, interval=INTERVAL):
         retries = 0
