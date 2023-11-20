@@ -398,7 +398,9 @@ class Worker(ABC):
             return self.process(blocking=True)
 
         if not self.num_threads:
-            return process()
+            # TODO - seems like we need at least one thread
+            # consuming and processing require separate threads
+            self.num_threads = 1
 
         threads = []
         for _ in range(self.num_threads):
