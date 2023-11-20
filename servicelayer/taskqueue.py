@@ -396,6 +396,9 @@ class Worker(ABC):
         def process():
             return self.process(blocking=True)
 
+        if not self.num_threads:
+            return process()
+
         threads = []
         for _ in range(self.num_threads):
             thread = threading.Thread(target=process)
@@ -435,27 +438,34 @@ def get_rabbitmq_connection():
                     )
                 )
                 local.connection = connection
+
             if local.connection.is_open:
                 channel = local.connection.channel()
+
                 channel.queue_declare(
                     queue=settings.QUEUE_ALEPH,
                     durable=True,
                     arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY},
                 )
+
                 channel.queue_declare(
                     queue=settings.QUEUE_INGEST,
                     durable=True,
                     arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY},
                 )
+
                 channel.queue_declare(
                     queue=settings.QUEUE_INDEX,
                     durable=True,
                     arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY},
                 )
+
                 channel.close()
                 return local.connection
+
         except (pika.exceptions.AMQPConnectionError, pika.exceptions.AMQPError):
             log.exception("RabbitMQ error")
         local.connection = None
+
         backoff(failures=attempt)
     raise RuntimeError("Could not connect to RabbitMQ")
