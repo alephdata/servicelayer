@@ -372,7 +372,8 @@ class Worker(ABC):
         skip_ack = task.context.get("skip_ack")
         if skip_ack:
             log.info(
-                f"Skipping acknowledging message {task.delivery_tag} for task_id {task.task_id}"
+                f"""Skipping acknowledging message
+                {task.delivery_tag} for task_id {task.task_id}"""
             )
         else:
             log.info(
