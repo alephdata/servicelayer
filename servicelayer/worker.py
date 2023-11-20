@@ -108,12 +108,12 @@ class Worker(ABC):
         retries = unpack_int(task.context.get("retries"))
 
         try:
-            TASKS_STARTED.labels(task.stage.stage).inc()
+            TASKS_STARTED.labels(stage=task.stage.stage).inc()
             start_time = default_timer()
             self.handle(task)
             duration = max(0, default_timer() - start_time)
-            TASK_DURATION.labels(task.stage.stage).observe(duration)
-            TASKS_SUCCEEDED.labels(task.stage.stage, retries).inc()
+            TASK_DURATION.labels(stage=task.stage.stage).observe(duration)
+            TASKS_SUCCEEDED.labels(stage=task.stage.stage, retries=retries).inc()
         except SystemExit as exc:
             self.exit_code = exc.code
             self.retry(task)
@@ -153,14 +153,22 @@ class Worker(ABC):
             log.warning(
                 f"Queueing failed task for retry #{retry_count}/{settings.WORKER_RETRY}..."  # noqa
             )
-            TASKS_FAILED.labels(task.stage.stage, retries, False).inc()
+            TASKS_FAILED.labels(
+                stage=task.stage.stage,
+                retries=retries,
+                failed_permanently=False,
+            ).inc()
             task.context["retries"] = retry_count
             task.stage.queue(task.payload, task.context)
         else:
             log.warning(
                 f"Failed task, exhausted retry count of {settings.WORKER_RETRY}"
             )
-            TASKS_FAILED.labels(task.stage.stage, retries, True).inc()
+            TASKS_FAILED.labels(
+                stage=task.stage.stage,
+                retries=retries,
+                failed_permanently=True,
+            ).inc()
 
     def process(self, blocking=True, interval=INTERVAL):
         retries = 0
