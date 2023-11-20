@@ -31,6 +31,7 @@ class TaskQueueTest(TestCase):
         conn = get_fakeredis()
         collection_id = 2
         task_id = "test-task"
+        priority = randrange(1, settings.RABBITMQ_MAX_PRIORITY + 1)
         body = {
             "collection_id": 2,
             "job_id": "test-job",
@@ -38,11 +39,11 @@ class TaskQueueTest(TestCase):
             "operation": "test-op",
             "context": {},
             "payload": {},
+            "priority": priority,
         }
         connection = get_rabbitmq_connection()
         channel = connection.channel()
         channel.queue_purge(settings.QUEUE_INGEST)
-        priority = randrange(1, settings.RABBITMQ_MAX_PRIORITY + 1)
         channel.basic_publish(
             properties=pika.BasicProperties(priority=priority),
             exchange="",
@@ -72,7 +73,6 @@ class TaskQueueTest(TestCase):
         assert task.get_retry_count(conn) == 1
 
         with patch("servicelayer.settings.WORKER_RETRY", 0):
-            priority = randrange(1, settings.RABBITMQ_MAX_PRIORITY + 1)
             channel = connection.channel()
             channel.queue_purge(settings.QUEUE_INGEST)
             channel.basic_publish(
