@@ -14,11 +14,7 @@ ENV LANG='en_US.UTF-8'
 
 COPY . /opt/servicelayer
 WORKDIR /opt/servicelayer
-
-RUN pip3 install --no-cache-dir --prefer-binary --upgrade pip
-RUN pip3 install --no-cache-dir --prefer-binary --upgrade setuptools wheel
-RUN pip3 install --no-cache-dir --prefer-binary -r requirements.txt
-RUN pip3 install -q --no-cache-dir --config-settings editable_mode=compat --use-pep517 -e /opt/servicelayer[dev]
+RUN pip3 install -q --no-cache-dir -e /opt/servicelayer[dev]
 RUN pip3 install -r requirements.txt
 
 CMD /bin/bash
