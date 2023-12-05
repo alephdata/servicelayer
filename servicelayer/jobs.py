@@ -87,6 +87,7 @@ class Job(object):
         self.dataset = Dataset.ensure(conn, dataset)
         self.start_key = make_key(PREFIX, "qd", self.id, dataset, "start")
         self.end_key = make_key(PREFIX, "qd", self.id, dataset, "end")
+        self.last_update_key = make_key(PREFIX, "qd", self.id, dataset, "last_update")
         self.active_jobs_key = make_key(PREFIX, "qdja")
 
     def get_stage(self, name):
@@ -117,6 +118,7 @@ class Job(object):
         pipe.sadd(self.active_jobs_key, make_key(self.dataset.name, self.id))
         pipe.delete(self.end_key)
         pipe.setnx(self.start_key, pack_now())
+        self.touch_last_updated(pipe)
 
     def _remove(self, pipe):
         for stage in self.get_stages():
@@ -125,6 +127,7 @@ class Job(object):
         pipe.srem(self.dataset.jobs_key, self.id)
         pipe.srem(self.active_jobs_key, make_key(self.dataset.name, self.id))
         pipe.delete(self.start_key)
+        pipe.delete(self.last_update_key)
         pipe.setnx(self.end_key, pack_now())
         pipe.expire(self.end_key, REDIS_EXPIRE)
 
@@ -144,9 +147,12 @@ class Job(object):
     def get_status(self):
         """Aggregate status for all stages on the given job."""
         status = {"finished": 0, "running": 0, "pending": 0, "stages": []}
-        start, end = self.conn.mget((self.start_key, self.end_key))
+        start, end, last_update = self.conn.mget(
+            (self.start_key, self.end_key, self.last_update_key)
+        )
         status["start_time"] = start
         status["end_time"] = end
+        status["last_update"] = last_update
         for stage in self.get_stages():
             progress = stage.get_status()
             status["stages"].append(progress)
@@ -154,6 +160,10 @@ class Job(object):
             status["running"] += progress["running"]
             status["pending"] += progress["pending"]
         return status
+
+    def touch_last_updated(self, pipe):
+        """Update the last_updated key for this job."""
+        pipe.set(self.last_update_key, pack_now())
 
     @classmethod
     def random_id(cls):
@@ -194,6 +204,7 @@ class Stage(object):
         self._create(pipe)
         pipe.decr(self.pending_key, amount=count)
         pipe.incr(self.running_key, amount=count)
+        self.job.touch_last_updated(pipe)
         pipe.execute()
 
     def mark_done(self, count=1):
@@ -202,6 +213,7 @@ class Stage(object):
         self._create(pipe)
         pipe.decr(self.running_key, amount=count)
         pipe.incr(self.finished_key, amount=count)
+        self.job.touch_last_updated(pipe)
         pipe.execute()
 
     def report_finished(self, count=1):
@@ -209,6 +221,7 @@ class Stage(object):
         pipe = self.conn.pipeline()
         self._create(pipe)
         pipe.incr(self.finished_key, amount=count)
+        self.job.touch_last_updated(pipe)
         pipe.execute()
 
     def queue(self, payload={}, context={}):
@@ -218,6 +231,7 @@ class Stage(object):
         self._create(pipe)
         pipe.rpush(self.queue_key, data)
         pipe.incr(self.pending_key)
+        self.job.touch_last_updated(pipe)
         pipe.execute()
         return task
 
