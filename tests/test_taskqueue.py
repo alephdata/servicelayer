@@ -1,3 +1,4 @@
+import datetime
 from unittest import TestCase
 from unittest.mock import patch
 import json
@@ -14,6 +15,7 @@ from servicelayer.taskqueue import (
     get_rabbitmq_connection,
     dataset_from_collection_id,
 )
+from servicelayer.util import unpack_datetime
 
 
 class CountingWorker(Worker):
@@ -58,6 +60,11 @@ class TaskQueueTest(TestCase):
         assert status["finished"] == 0, status
         assert status["pending"] == 1, status
         assert status["running"] == 0, status
+        assert status["end_time"] is None
+        started = unpack_datetime(status["start_time"])
+        last_updated = unpack_datetime(status["last_update"])
+        assert started < last_updated
+        assert abs(started - last_updated) < datetime.timedelta(seconds=1)
 
         worker = CountingWorker(
             queues=[settings.QUEUE_INGEST], conn=conn, num_threads=1
@@ -95,3 +102,7 @@ class TaskQueueTest(TestCase):
         assert status["finished"] == 1, status
         assert status["pending"] == 0, status
         assert status["running"] == 0, status
+        started = unpack_datetime(status["start_time"])
+        last_updated = unpack_datetime(status["last_update"])
+        end_time = unpack_datetime(status["end_time"])
+        assert started < end_time < last_updated
