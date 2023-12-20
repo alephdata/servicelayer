@@ -45,6 +45,7 @@ class Task:
     operation: str
     context: dict
     payload: dict
+    priority: int
     collection_id: Optional[str] = None
 
     @property
@@ -211,6 +212,7 @@ def get_task(body, delivery_tag) -> Task:
         operation=body["operation"],
         context=body["context"] or {},
         payload=body["payload"] or {},
+        priority=body["priority"] or 0,
     )
 
 
@@ -370,8 +372,8 @@ class Worker(ABC):
         skip_ack = task.context.get("skip_ack")
         if skip_ack:
             log.info(
-                f"Skipping acknowledging message {task.delivery_tag}"
-                "for task_id {task.task_id}"
+                f"""Skipping acknowledging message
+                {task.delivery_tag} for task_id {task.task_id}"""
             )
         else:
             log.info(
@@ -395,6 +397,11 @@ class Worker(ABC):
         def process():
             return self.process(blocking=True)
 
+        if not self.num_threads:
+            # TODO - seems like we need at least one thread
+            # consuming and processing require separate threads
+            self.num_threads = 1
+
         threads = []
         for _ in range(self.num_threads):
             thread = threading.Thread(target=process)
@@ -409,7 +416,11 @@ class Worker(ABC):
         channel.basic_qos(prefetch_count=self.prefetch_count)
         on_message_callback = functools.partial(self.on_message, args=(connection,))
         for queue in self.queues:
-            channel.queue_declare(queue=queue, durable=True)
+            channel.queue_declare(
+                queue=queue,
+                durable=True,
+                arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY},
+            )
             channel.basic_consume(queue=queue, on_message_callback=on_message_callback)
         channel.start_consuming()
 
@@ -430,15 +441,34 @@ def get_rabbitmq_connection():
                     )
                 )
                 local.connection = connection
+
             if local.connection.is_open:
                 channel = local.connection.channel()
-                channel.queue_declare(queue=settings.QUEUE_ALEPH, durable=True)
-                channel.queue_declare(queue=settings.QUEUE_INGEST, durable=True)
-                channel.queue_declare(queue=settings.QUEUE_INDEX, durable=True)
+
+                channel.queue_declare(
+                    queue=settings.QUEUE_ALEPH,
+                    durable=True,
+                    arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY},
+                )
+
+                channel.queue_declare(
+                    queue=settings.QUEUE_INGEST,
+                    durable=True,
+                    arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY},
+                )
+
+                channel.queue_declare(
+                    queue=settings.QUEUE_INDEX,
+                    durable=True,
+                    arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY},
+                )
+
                 channel.close()
                 return local.connection
+
         except (pika.exceptions.AMQPConnectionError, pika.exceptions.AMQPError):
             log.exception("RabbitMQ error")
         local.connection = None
+
         backoff(failures=attempt)
     raise RuntimeError("Could not connect to RabbitMQ")

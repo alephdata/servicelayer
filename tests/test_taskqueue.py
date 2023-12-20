@@ -1,7 +1,9 @@
 from unittest import TestCase
 from unittest.mock import patch
 import json
+from random import randrange
 
+import pika
 
 from servicelayer import settings
 from servicelayer.cache import get_fakeredis
@@ -29,6 +31,7 @@ class TaskQueueTest(TestCase):
         conn = get_fakeredis()
         collection_id = 2
         task_id = "test-task"
+        priority = randrange(1, settings.RABBITMQ_MAX_PRIORITY + 1)
         body = {
             "collection_id": 2,
             "job_id": "test-job",
@@ -36,11 +39,13 @@ class TaskQueueTest(TestCase):
             "operation": "test-op",
             "context": {},
             "payload": {},
+            "priority": priority,
         }
         connection = get_rabbitmq_connection()
         channel = connection.channel()
         channel.queue_purge(settings.QUEUE_INGEST)
         channel.basic_publish(
+            properties=pika.BasicProperties(priority=priority),
             exchange="",
             routing_key=settings.QUEUE_INGEST,
             body=json.dumps(body),
@@ -71,6 +76,7 @@ class TaskQueueTest(TestCase):
             channel = connection.channel()
             channel.queue_purge(settings.QUEUE_INGEST)
             channel.basic_publish(
+                properties=pika.BasicProperties(priority=priority),
                 exchange="",
                 routing_key=settings.QUEUE_INGEST,
                 body=json.dumps(body),
