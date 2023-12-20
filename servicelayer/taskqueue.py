@@ -15,7 +15,7 @@ import pika
 from banal import ensure_list
 
 from servicelayer.cache import get_redis, make_key
-from servicelayer.util import unpack_int
+from servicelayer.util import pack_now, unpack_int
 from servicelayer import settings
 from servicelayer.util import service_retries, backoff
 
@@ -79,6 +79,9 @@ class Dataset:
         # sets that contain task ids of running and pending tasks
         self.running_key = make_key(PREFIX, "qdj", name, "running")
         self.pending_key = make_key(PREFIX, "qdj", name, "pending")
+        self.start_key = make_key(PREFIX, "qdj", name, "start")
+        self.end_key = make_key(PREFIX, "qdj", name, "end")
+        self.last_update_key = make_key(PREFIX, "qdj", name, "last_update")
 
     def cancel(self):
         """Cancel processing of all tasks belonging to a dataset"""
@@ -89,6 +92,9 @@ class Dataset:
         pipe.delete(self.finished_key)
         pipe.delete(self.running_key)
         pipe.delete(self.pending_key)
+        pipe.delete(self.start_key)
+        pipe.delete(self.end_key)
+        pipe.delete(self.last_update_key)
         pipe.execute()
 
     def get_status(self):
@@ -100,6 +106,12 @@ class Dataset:
         status["finished"] = max(0, unpack_int(finished))
         status["running"] = max(0, unpack_int(running))
         status["pending"] = max(0, unpack_int(pending))
+        start, end, last_update = self.conn.mget(
+            (self.start_key, self.end_key, self.last_update_key)
+        )
+        status["start_time"] = start
+        status["end_time"] = end
+        status["last_update"] = last_update
         return status
 
     @classmethod
@@ -159,16 +171,22 @@ class Dataset:
         # add the dataset to active datasets
         pipe.sadd(self.key, self.name)
         pipe.sadd(self.pending_key, task_id)
+        pipe.set(self.start_key, pack_now())
+        pipe.set(self.last_update_key, pack_now())
+        pipe.delete(self.end_key)
         pipe.execute()
 
     def remove_task(self, task_id):
         """Remove a task that's not going to be executed"""
         log.info(f"Removing task: {task_id}")
-        self.conn.srem(self.pending_key, task_id)
+        pipe = self.conn.pipeline()
+        pipe.srem(self.pending_key, task_id)
         status = self.get_status()
         if status["running"] == 0 and status["pending"] == 0:
             # remove the dataset from active datasets
-            self.conn.srem(self.key, self.name)
+            pipe.srem(self.key, self.name)
+        pipe.set(self.last_update_key, pack_now())
+        pipe.execute()
 
     def checkout_task(self, task_id):
         """Update state when a task is checked out for execution"""
@@ -178,6 +196,8 @@ class Dataset:
         pipe.sadd(self.key, self.name)
         pipe.srem(self.pending_key, task_id)
         pipe.sadd(self.running_key, task_id)
+        pipe.set(self.start_key, pack_now())
+        pipe.set(self.last_update_key, pack_now())
         pipe.execute()
 
     def mark_done(self, task: Task):
@@ -188,6 +208,8 @@ class Dataset:
         pipe.srem(self.running_key, task.task_id)
         pipe.incr(self.finished_key)
         pipe.delete(task.retry_key)
+        pipe.set(self.end_key, pack_now())
+        pipe.set(self.last_update_key, pack_now())
         pipe.execute()
         status = self.get_status()
         if status["running"] == 0 and status["pending"] == 0:
