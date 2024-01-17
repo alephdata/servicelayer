@@ -450,7 +450,11 @@ class Worker(ABC):
 def get_rabbitmq_connection():
     for attempt in service_retries():
         try:
-            if not hasattr(local, "connection") or not local.connection:
+            if (
+                not hasattr(local, "connection")
+                or not local.connection
+                or not local.connection.is_open
+            ):
                 credentials = pika.PlainCredentials(
                     settings.RABBITMQ_USERNAME, settings.RABBITMQ_PASSWORD
                 )
@@ -464,7 +468,7 @@ def get_rabbitmq_connection():
                 )
                 local.connection = connection
 
-            if local.connection.is_open:
+            if local.connection and local.connection.is_open:
                 channel = local.connection.channel()
 
                 channel.queue_declare(
@@ -487,6 +491,44 @@ def get_rabbitmq_connection():
 
                 channel.close()
                 return local.connection
+
+            # if not hasattr(local, "connection") or not local.connection:
+            #     credentials = pika.PlainCredentials(
+            #         settings.RABBITMQ_USERNAME, settings.RABBITMQ_PASSWORD
+            #     )
+            #     connection = pika.BlockingConnection(
+            #         pika.ConnectionParameters(
+            #             host=settings.RABBITMQ_URL,
+            #             credentials=credentials,
+            #             heartbeat=settings.RABBITMQ_HEARTBEAT,
+            #             blocked_connection_timeout=settings.RABBITMQ_BLOCKED_CONNECTION_TIMEOUT,
+            #         )
+            #     )
+            #     local.connection = connection
+
+            # if local.connection.is_open:
+            #     channel = local.connection.channel()
+
+            #     channel.queue_declare(
+            #         queue=settings.QUEUE_ALEPH,
+            #         durable=True,
+            #         arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY},
+            #     )
+
+            #     channel.queue_declare(
+            #         queue=settings.QUEUE_INGEST,
+            #         durable=True,
+            #         arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY},
+            #     )
+
+            #     channel.queue_declare(
+            #         queue=settings.QUEUE_INDEX,
+            #         durable=True,
+            #         arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY},
+            #     )
+
+            #     channel.close()
+            #     return local.connection
 
         except (pika.exceptions.AMQPConnectionError, pika.exceptions.AMQPError):
             log.exception("RabbitMQ error")
