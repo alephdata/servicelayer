@@ -455,6 +455,7 @@ def get_rabbitmq_connection():
                 or not local.connection
                 or not local.connection.is_open
             ):
+                log.debug("Establishing connection to RabbitMQ server")
                 credentials = pika.PlainCredentials(
                     settings.RABBITMQ_USERNAME, settings.RABBITMQ_PASSWORD
                 )
@@ -469,6 +470,7 @@ def get_rabbitmq_connection():
                 local.connection = connection
 
             if local.connection and local.connection.is_open:
+                log.debug("Defining RabbitMQ queues on an open connection")
                 channel = local.connection.channel()
 
                 channel.queue_declare(
@@ -493,7 +495,7 @@ def get_rabbitmq_connection():
                 return local.connection
 
         except (pika.exceptions.AMQPConnectionError, pika.exceptions.AMQPError):
-            log.exception("RabbitMQ error")
+            log.exception(f"RabbitMQ error. Attempt: {attempt}")
         local.connection = None
 
         backoff(failures=attempt)
