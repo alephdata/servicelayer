@@ -455,7 +455,7 @@ def get_rabbitmq_connection():
                 or not local.connection
                 or not local.connection.is_open
             ):
-                log.critical("Establishing connection to RabbitMQ server")
+                log.debug("Establishing connection to RabbitMQ server")
                 credentials = pika.PlainCredentials(
                     settings.RABBITMQ_USERNAME, settings.RABBITMQ_PASSWORD
                 )
@@ -470,7 +470,7 @@ def get_rabbitmq_connection():
                 local.connection = connection
 
             if local.connection and local.connection.is_open:
-                log.critical("Defining RabbitMQ queues on an open connection")
+                log.debug("Defining RabbitMQ queues on an open connection")
                 channel = local.connection.channel()
 
                 channel.queue_declare(
