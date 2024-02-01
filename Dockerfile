@@ -14,7 +14,6 @@ ENV LANG='en_US.UTF-8'
 
 COPY . /opt/servicelayer
 WORKDIR /opt/servicelayer
-RUN make install
 RUN make dev
 
 CMD /bin/bash

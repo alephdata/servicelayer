@@ -15,16 +15,7 @@ jobs:
       with:
         python-version: '3.x'
     - name: Install dependencies
-      env:
-        DEBIAN_FRONTEND: noninteractive
-        BOTO_CONFIG: /dev/null
-        AWS_ACCESS_KEY_ID: banana
-        AWS_SECRET_ACCESS_KEY: bananacake
-      run: |
-        sudo rm -f /etc/boto.cfg
-        sudo apt-get -qq update
-        sudo apt-get install -y libicu-dev
-        make dev
+      run: make dev
     - name: Run the code format check
       run: make format-check
     - name: Run the linter
