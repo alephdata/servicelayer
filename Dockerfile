@@ -14,7 +14,7 @@ ENV LANG='en_US.UTF-8'
 
 COPY . /opt/servicelayer
 WORKDIR /opt/servicelayer
-RUN pip3 install -q --no-cache-dir -e /opt/servicelayer[dev]
-RUN pip3 install -r requirements.txt
+RUN make install
+RUN make dev
 
 CMD /bin/bash

@@ -44,14 +44,6 @@ setup(
             "grpcio >= 1.32.0, <2.0.0",
             "google-cloud-storage >= 1.31.0, < 3.0.0",
         ],
-        "dev": [
-            "twine",
-            "moto < 5",
-            "boto3 >= 1.11.9, <2.0.0",
-            "pytest >= 3.6",
-            "coverage",
-            "pytest-cov",
-        ],
     },
     test_suite="tests",
     entry_points={

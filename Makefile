@@ -8,7 +8,6 @@ build-docker:
 
 install:
 	pip install -q -e .
-	pip install -q twine coverage nose moto boto3
 
 dev:
 	python3 -m pip install --upgrade pip setuptools
