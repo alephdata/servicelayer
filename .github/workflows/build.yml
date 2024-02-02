@@ -21,8 +21,8 @@ jobs:
     - name: Run the linter
       run: make lint
     - name: Run the tests
-      run: |
-        make test
+      # Some tests rely on the package being installed
+      run: docker compose run --rm shell bash -c "make install && make tests"
     - name: Build a distribution
       run: |
         python setup.py sdist bdist_wheel

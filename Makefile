@@ -15,7 +15,7 @@ dev:
 	python3 -m pip install -q -r requirements-dev.txt
 
 test:
-	docker-compose run --rm shell pytest --cov=servicelayer
+	pytest --cov=servicelayer
 
 lint:
 	ruff check .
