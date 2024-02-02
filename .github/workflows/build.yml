@@ -8,24 +8,20 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - name: Show ref
+      run: echo "$GITHUB_REF"
+    - name: Build/pull Docker images
       run: |
-        echo "$GITHUB_REF"
-    - name: Set up Python
-      uses: actions/setup-python@v1
-      with:
-        python-version: '3.x'
-    - name: Install dependencies
-      run: make dev
+        docker compose build shell
+        docker compose pull rabbitmq
     - name: Run the code format check
-      run: make format-check
+      run: docker compose run --rm shell make format-check
     - name: Run the linter
-      run: make lint
+      run: docker compose run --rm shell make lint
     - name: Run the tests
       # Some tests rely on the package being installed
       run: docker compose run --rm shell bash -c "make install && make tests"
     - name: Build a distribution
-      run: |
-        python setup.py sdist bdist_wheel
+      run: docker compose run --rm shell python3 setup.py sdist bdist_wheel
     - name: Publish a Python distribution to PyPI
       if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
       uses: pypa/gh-action-pypi-publish@release/v1
