@@ -287,7 +287,7 @@ class Dataset:
         pipe.srem(stage_key, task.task_id)
         pipe.srem(make_key(stage_key, "pending"), task.task_id)
         pipe.srem(make_key(stage_key, "running"), task.task_id)
-        pipe.incr(make_key(stage_key, "finished"), task.task_id)
+        pipe.incr(make_key(stage_key, "finished"))
 
         pipe.set(self.end_key, pack_now())
         pipe.set(self.last_update_key, pack_now())
