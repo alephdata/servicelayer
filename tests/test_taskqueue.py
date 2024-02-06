@@ -53,7 +53,7 @@ class TaskQueueTest(TestCase):
             body=json.dumps(body),
         )
         dataset = Dataset(conn=conn, name=dataset_from_collection_id(collection_id))
-        dataset.add_task(task_id)
+        dataset.add_task(task_id, "test-op")
         channel.close()
 
         status = dataset.get_status()
@@ -89,7 +89,7 @@ class TaskQueueTest(TestCase):
                 body=json.dumps(body),
             )
             dataset = Dataset(conn=conn, name=dataset_from_collection_id(collection_id))
-            dataset.add_task(task_id)
+            dataset.add_task(task_id, "test-op")
             channel.close()
             with self.assertLogs(level="ERROR") as ctx:
                 worker.process(blocking=False)
