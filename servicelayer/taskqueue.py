@@ -122,9 +122,9 @@ class Dataset:
         status["last_update"] = last_update
 
         jobs_info = {
-            "finished": self.conn.get(self.finished_key),
-            "running": self.conn.scard(self.running_key),
-            "pending": self.conn.scard(self.pending_key),
+            "finished": max(0, unpack_int(finished)),
+            "running": max(0, unpack_int(running)),
+            "pending": max(0, unpack_int(pending)),
             "stages": [],
         }
 
@@ -134,9 +134,15 @@ class Dataset:
                 {
                     "job_id": None,
                     "stage": stage,
-                    "pending": self.conn.scard(make_key(stage_key, "pending")),
-                    "running": self.conn.scard(make_key(stage_key, "running")),
-                    "finished": self.conn.get(make_key(stage_key, "finished")),
+                    "pending": max(
+                        0, unpack_int(self.conn.scard(make_key(stage_key, "pending")))
+                    ),
+                    "running": max(
+                        0, unpack_int(self.conn.scard(make_key(stage_key, "running")))
+                    ),
+                    "finished": max(
+                        0, unpack_int(self.conn.get(make_key(stage_key, "finished")))
+                    ),
                 }
             )
 
@@ -459,6 +465,7 @@ class Worker(ABC):
                     )
                 dataset.checkout_task(task.task_id, task.operation)
                 task.increment_retry_count(self.conn)
+                log.info(f"Dispatching task {task.task_id} from job {task.job_id}")
                 task = self.dispatch_task(task)
             else:
                 log.warn(f"Discarding task: {task.task_id}")
