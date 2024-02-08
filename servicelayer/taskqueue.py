@@ -132,7 +132,7 @@ class Dataset:
             stage_key = self.get_stage_key(stage)
             jobs_info["stages"].append(
                 {
-                    "job_id": None,
+                    "job_id": "",
                     "stage": stage,
                     "pending": max(
                         0, unpack_int(self.conn.scard(make_key(stage_key, "pending")))
