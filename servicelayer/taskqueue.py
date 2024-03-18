@@ -107,13 +107,8 @@ class Dataset:
 
     def get_status(self):
         """Status of a given dataset."""
-        status = {"finished": 0, "running": 0, "pending": 0, "jobs": []}
-        finished = self.conn.get(self.finished_key)
-        running = self.conn.scard(self.running_key)
-        pending = self.conn.scard(self.pending_key)
-        status["finished"] = max(0, unpack_int(finished))
-        status["running"] = max(0, unpack_int(running))
-        status["pending"] = max(0, unpack_int(pending))
+        status = {"finished": 0, "running": 0, "pending": 0, "stages": []}
+
         start, end, last_update = self.conn.mget(
             (self.start_key, self.end_key, self.last_update_key)
         )
@@ -121,16 +116,9 @@ class Dataset:
         status["end_time"] = end
         status["last_update"] = last_update
 
-        jobs_info = {
-            "finished": max(0, unpack_int(finished)),
-            "running": max(0, unpack_int(running)),
-            "pending": max(0, unpack_int(pending)),
-            "stages": [],
-        }
-
         for stage in self.conn.smembers(self.active_stages_key):
             stage_key = self.get_stage_key(stage)
-            jobs_info["stages"].append(
+            status["stages"].append(
                 {
                     "job_id": "",
                     "stage": stage,
@@ -146,7 +134,16 @@ class Dataset:
                 }
             )
 
-        status["jobs"].append(jobs_info)
+        status["finished"] = max(
+            0, sum([stage["finished"] for stage in status["stages"]])
+        )
+        status["running"] = max(
+            0, sum([stage["running"] for stage in status["stages"]])
+        )
+        status["pending"] = max(
+            0, sum([stage["pending"] for stage in status["stages"]])
+        )
+
         return status
 
     @classmethod
