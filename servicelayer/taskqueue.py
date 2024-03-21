@@ -15,7 +15,7 @@ import pika
 from banal import ensure_list
 
 from servicelayer.cache import get_redis, make_key
-from servicelayer.util import unpack_int
+from servicelayer.util import pack_now, unpack_int
 from servicelayer import settings
 from servicelayer.util import service_retries, backoff
 
@@ -45,6 +45,7 @@ class Task:
     operation: str
     context: dict
     payload: dict
+    priority: int
     collection_id: Optional[str] = None
 
     @property
@@ -78,6 +79,10 @@ class Dataset:
         # sets that contain task ids of running and pending tasks
         self.running_key = make_key(PREFIX, "qdj", name, "running")
         self.pending_key = make_key(PREFIX, "qdj", name, "pending")
+        self.start_key = make_key(PREFIX, "qdj", name, "start")
+        self.end_key = make_key(PREFIX, "qdj", name, "end")
+        self.last_update_key = make_key(PREFIX, "qdj", name, "last_update")
+        self.active_stages_key = make_key(PREFIX, "qds", name, "active_stages")
 
     def cancel(self):
         """Cancel processing of all tasks belonging to a dataset"""
@@ -88,17 +93,57 @@ class Dataset:
         pipe.delete(self.finished_key)
         pipe.delete(self.running_key)
         pipe.delete(self.pending_key)
+        pipe.delete(self.start_key)
+        pipe.delete(self.end_key)
+        pipe.delete(self.last_update_key)
+        for stage in self.conn.smembers(self.active_stages_key):
+            stage_key = self.get_stage_key(stage)
+            pipe.delete(stage_key)
+            pipe.delete(make_key(stage_key, "pending"))
+            pipe.delete(make_key(stage_key, "running"))
+            pipe.delete(make_key(stage_key, "finished"))
+        pipe.delete(self.active_stages_key)
         pipe.execute()
 
     def get_status(self):
         """Status of a given dataset."""
-        status = {"finished": 0, "running": 0, "pending": 0}
-        finished = self.conn.get(self.finished_key)
-        running = self.conn.scard(self.running_key)
-        pending = self.conn.scard(self.pending_key)
-        status["finished"] = max(0, unpack_int(finished))
-        status["running"] = max(0, unpack_int(running))
-        status["pending"] = max(0, unpack_int(pending))
+        status = {"finished": 0, "running": 0, "pending": 0, "stages": []}
+
+        start, end, last_update = self.conn.mget(
+            (self.start_key, self.end_key, self.last_update_key)
+        )
+        status["start_time"] = start
+        status["end_time"] = end
+        status["last_update"] = last_update
+
+        for stage in self.conn.smembers(self.active_stages_key):
+            stage_key = self.get_stage_key(stage)
+            status["stages"].append(
+                {
+                    "job_id": "",
+                    "stage": stage,
+                    "pending": max(
+                        0, unpack_int(self.conn.scard(make_key(stage_key, "pending")))
+                    ),
+                    "running": max(
+                        0, unpack_int(self.conn.scard(make_key(stage_key, "running")))
+                    ),
+                    "finished": max(
+                        0, unpack_int(self.conn.get(make_key(stage_key, "finished")))
+                    ),
+                }
+            )
+
+        status["finished"] = max(
+            0, sum([stage["finished"] for stage in status["stages"]])
+        )
+        status["running"] = max(
+            0, sum([stage["running"] for stage in status["stages"]])
+        )
+        status["pending"] = max(
+            0, sum([stage["pending"] for stage in status["stages"]])
+        )
+
         return status
 
     @classmethod
@@ -126,6 +171,17 @@ class Dataset:
                 pipe.srem(dataset.key, dataset.name)
                 # reset finished task count
                 pipe.delete(dataset.finished_key)
+                # delete information about running stages
+                for stage in dataset.conn.smembers(dataset.active_stages_key):
+                    stage_key = dataset.get_stage_key(stage)
+                    pipe.delete(stage_key)
+                    pipe.delete(make_key(stage_key, "pending"))
+                    pipe.delete(make_key(stage_key, "running"))
+                    pipe.delete(make_key(stage_key, "finished"))
+                # delete stages key
+                pipe.delete(dataset.active_stages_key)
+                pipe.set(dataset.last_update_key, pack_now())
+
                 pipe.execute()
 
     def should_execute(self, task_id):
@@ -151,32 +207,74 @@ class Dataset:
                 continue
             return _should_execute
 
-    def add_task(self, task_id):
+    def add_task(self, task_id, stage):
         """Update state when a new task is added to the task queue"""
         log.info(f"Adding task: {task_id}")
         pipe = self.conn.pipeline()
         # add the dataset to active datasets
         pipe.sadd(self.key, self.name)
+
+        # update status of stages per dataset
+        stage_key = self.get_stage_key(stage)
+        pipe.sadd(self.active_stages_key, stage)
+        pipe.sadd(stage_key, task_id)
+        pipe.sadd(make_key(stage_key, "pending"), task_id)
+
         pipe.sadd(self.pending_key, task_id)
+        pipe.set(self.start_key, pack_now())
+        pipe.set(self.last_update_key, pack_now())
+        pipe.delete(self.end_key)
         pipe.execute()
 
-    def remove_task(self, task_id):
+    def remove_task(self, task_id, stage):
         """Remove a task that's not going to be executed"""
         log.info(f"Removing task: {task_id}")
-        self.conn.srem(self.pending_key, task_id)
+        pipe = self.conn.pipeline()
+        pipe.srem(self.pending_key, task_id)
+
+        stage_key = self.get_stage_key(stage)
+        pipe.srem(stage_key, task_id)
+        pipe.srem(make_key(stage_key, "pending"), task_id)
+
+        pipe.delete(make_key(PREFIX, "qdj", self.name, "taskretry", task_id))
+
         status = self.get_status()
         if status["running"] == 0 and status["pending"] == 0:
             # remove the dataset from active datasets
-            self.conn.srem(self.key, self.name)
+            pipe.srem(self.key, self.name)
+            # reset finished task count
+            pipe.delete(self.finished_key)
+            # delete information about running stages
+            for stage in self.conn.smembers(self.active_stages_key):
+                stage_key = self.get_stage_key(stage)
+                pipe.delete(stage_key)
+                pipe.delete(make_key(stage_key, "pending"))
+                pipe.delete(make_key(stage_key, "running"))
+                pipe.delete(make_key(stage_key, "finished"))
+            # delete stages key
+            pipe.delete(self.active_stages_key)
+        pipe.set(self.last_update_key, pack_now())
+        pipe.execute()
 
-    def checkout_task(self, task_id):
+    def checkout_task(self, task_id, stage):
         """Update state when a task is checked out for execution"""
         log.info(f"Checking out task: {task_id}")
         pipe = self.conn.pipeline()
         # add the dataset to active datasets
         pipe.sadd(self.key, self.name)
+
+        # update status of stages per dataset
+        stage_key = self.get_stage_key(stage)
+        pipe.sadd(self.active_stages_key, stage)
+        pipe.sadd(stage_key, task_id)
+        pipe.srem(make_key(stage_key, "pending"), task_id)
+        pipe.sadd(make_key(stage_key, "running"), task_id)
+
         pipe.srem(self.pending_key, task_id)
         pipe.sadd(self.running_key, task_id)
+        pipe.set(self.start_key, pack_now())
+        pipe.set(self.last_update_key, pack_now())
+        pipe.delete(self.end_key)
         pipe.execute()
 
     def mark_done(self, task: Task):
@@ -187,11 +285,31 @@ class Dataset:
         pipe.srem(self.running_key, task.task_id)
         pipe.incr(self.finished_key)
         pipe.delete(task.retry_key)
+
+        stage_key = self.get_stage_key(task.operation)
+        pipe.srem(stage_key, task.task_id)
+        pipe.srem(make_key(stage_key, "pending"), task.task_id)
+        pipe.srem(make_key(stage_key, "running"), task.task_id)
+        pipe.incr(make_key(stage_key, "finished"))
+
+        pipe.set(self.end_key, pack_now())
+        pipe.set(self.last_update_key, pack_now())
         pipe.execute()
         status = self.get_status()
         if status["running"] == 0 and status["pending"] == 0:
             # remove the dataset from active datasets
             self.conn.srem(self.key, self.name)
+            # reset finished task count
+            pipe.delete(self.finished_key)
+            # delete information about running stages
+            for stage in self.conn.smembers(self.active_stages_key):
+                stage_key = self.get_stage_key(stage)
+                pipe.delete(stage_key)
+                pipe.delete(make_key(stage_key, "pending"))
+                pipe.delete(make_key(stage_key, "running"))
+                pipe.delete(make_key(stage_key, "finished"))
+            # delete stages key
+            pipe.delete(self.active_stages_key)
 
     def is_done(self):
         status = self.get_status()
@@ -199,6 +317,9 @@ class Dataset:
 
     def __str__(self):
         return self.name
+
+    def get_stage_key(self, stage):
+        return make_key(PREFIX, "qds", self.name, stage)
 
 
 def get_task(body, delivery_tag) -> Task:
@@ -211,6 +332,7 @@ def get_task(body, delivery_tag) -> Task:
         operation=body["operation"],
         context=body["context"] or {},
         payload=body["payload"] or {},
+        priority=body["priority"] or 0,
     )
 
 
@@ -338,8 +460,9 @@ class Worker(ABC):
                     raise MaxRetriesExceededError(
                         f"Max retries reached for task {task.task_id}. Aborting."
                     )
-                dataset.checkout_task(task.task_id)
+                dataset.checkout_task(task.task_id, task.operation)
                 task.increment_retry_count(self.conn)
+                log.info(f"Dispatching task {task.task_id} from job {task.job_id}")
                 task = self.dispatch_task(task)
             else:
                 log.warn(f"Discarding task: {task.task_id}")
@@ -370,8 +493,8 @@ class Worker(ABC):
         skip_ack = task.context.get("skip_ack")
         if skip_ack:
             log.info(
-                f"Skipping acknowledging message {task.delivery_tag}"
-                "for task_id {task.task_id}"
+                f"""Skipping acknowledging message
+                {task.delivery_tag} for task_id {task.task_id}"""
             )
         else:
             log.info(
@@ -395,6 +518,11 @@ class Worker(ABC):
         def process():
             return self.process(blocking=True)
 
+        if not self.num_threads:
+            # TODO - seems like we need at least one thread
+            # consuming and processing require separate threads
+            self.num_threads = 1
+
         threads = []
         for _ in range(self.num_threads):
             thread = threading.Thread(target=process)
@@ -409,7 +537,11 @@ class Worker(ABC):
         channel.basic_qos(prefetch_count=self.prefetch_count)
         on_message_callback = functools.partial(self.on_message, args=(connection,))
         for queue in self.queues:
-            channel.queue_declare(queue=queue, durable=True)
+            channel.queue_declare(
+                queue=queue,
+                durable=True,
+                arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY},
+            )
             channel.basic_consume(queue=queue, on_message_callback=on_message_callback)
         channel.start_consuming()
 
@@ -417,7 +549,12 @@ class Worker(ABC):
 def get_rabbitmq_connection():
     for attempt in service_retries():
         try:
-            if not hasattr(local, "connection") or not local.connection:
+            if (
+                not hasattr(local, "connection")
+                or not local.connection
+                or not local.connection.is_open
+            ):
+                log.debug("Establishing connection to RabbitMQ server")
                 credentials = pika.PlainCredentials(
                     settings.RABBITMQ_USERNAME, settings.RABBITMQ_PASSWORD
                 )
@@ -430,15 +567,35 @@ def get_rabbitmq_connection():
                     )
                 )
                 local.connection = connection
-            if local.connection.is_open:
+
+            if local.connection and local.connection.is_open:
+                log.debug("Defining RabbitMQ queues on an open connection")
                 channel = local.connection.channel()
-                channel.queue_declare(queue=settings.QUEUE_ALEPH, durable=True)
-                channel.queue_declare(queue=settings.QUEUE_INGEST, durable=True)
-                channel.queue_declare(queue=settings.QUEUE_INDEX, durable=True)
+
+                channel.queue_declare(
+                    queue=settings.QUEUE_ALEPH,
+                    durable=True,
+                    arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY},
+                )
+
+                channel.queue_declare(
+                    queue=settings.QUEUE_INGEST,
+                    durable=True,
+                    arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY},
+                )
+
+                channel.queue_declare(
+                    queue=settings.QUEUE_INDEX,
+                    durable=True,
+                    arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY},
+                )
+
                 channel.close()
                 return local.connection
+
         except (pika.exceptions.AMQPConnectionError, pika.exceptions.AMQPError):
-            log.exception("RabbitMQ error")
+            log.exception(f"RabbitMQ error. Attempt: {attempt}")
         local.connection = None
+
         backoff(failures=attempt)
     raise RuntimeError("Could not connect to RabbitMQ")
