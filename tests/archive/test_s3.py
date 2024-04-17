@@ -1,4 +1,5 @@
 from unittest import TestCase
+from urllib.parse import urlparse, parse_qs
 
 from moto import mock_s3
 
@@ -30,10 +31,28 @@ class S3ArchiveTest(TestCase):
         assert checksum_ == out, (checksum_, out)
 
     def test_generate_url(self):
-        out = self.archive.archive_file(self.file)
-        url = self.archive.generate_url(out)
-        # assert False, url
-        assert url is not None, url
+        content_hash = self.archive.archive_file(self.file)
+        url = self.archive.generate_url(content_hash)
+        assert url is not None
+
+        url = urlparse(url)
+        assert url.netloc == "foo.s3.amazonaws.com"
+
+    def test_generate_url_headers(self):
+        content_hash = self.archive.archive_file(self.file)
+        url = self.archive.generate_url(
+            content_hash,
+            file_name="test.txt",
+            mime_type="text/plain",
+        )
+        assert url is not None
+
+        url = urlparse(url)
+        query = parse_qs(url.query)
+        assert query["response-content-type"] == ["text/plain"]
+        assert query["response-content-disposition"] == [
+            "attachment; filename=test.txt"
+        ]
 
     def test_publish_file(self):
         assert self.archive.can_publish
