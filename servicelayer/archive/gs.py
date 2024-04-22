@@ -161,7 +161,7 @@ class GoogleStorageArchive(VirtualArchive):
             return
         disposition = None
         if file_name is not None:
-            disposition = "inline; filename=%s" % file_name
+            disposition = "attachment; filename=%s" % file_name
         if expire is None:
             expire = datetime.utcnow() + timedelta(seconds=self.TIMEOUT)
         return blob.generate_signed_url(
