@@ -540,7 +540,11 @@ class Worker(ABC):
             channel.queue_declare(
                 queue=queue,
                 durable=True,
-                arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY},
+                arguments={
+                    "x-max-priority": settings.RABBITMQ_MAX_PRIORITY,
+                    "x-max-length": 10,
+                    "x-overflow": "reject-publish",
+                },
             )
             channel.basic_consume(queue=queue, on_message_callback=on_message_callback)
         channel.start_consuming()
@@ -575,19 +579,31 @@ def get_rabbitmq_connection():
                 channel.queue_declare(
                     queue=settings.QUEUE_ALEPH,
                     durable=True,
-                    arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY},
+                    arguments={
+                        "x-max-priority": settings.RABBITMQ_MAX_PRIORITY,
+                        "x-max-length": 10,
+                        "x-overflow": "reject-publish",
+                    },
                 )
 
                 channel.queue_declare(
                     queue=settings.QUEUE_INGEST,
                     durable=True,
-                    arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY},
+                    arguments={
+                        "x-max-priority": settings.RABBITMQ_MAX_PRIORITY,
+                        "x-max-length": 10,
+                        "x-overflow": "reject-publish",
+                    },
                 )
 
                 channel.queue_declare(
                     queue=settings.QUEUE_INDEX,
                     durable=True,
-                    arguments={"x-max-priority": settings.RABBITMQ_MAX_PRIORITY},
+                    arguments={
+                        "x-max-priority": settings.RABBITMQ_MAX_PRIORITY,
+                        "x-max-length": 10,
+                        "x-overflow": "reject-publish",
+                    },
                 )
 
                 channel.close()
