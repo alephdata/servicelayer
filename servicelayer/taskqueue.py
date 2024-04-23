@@ -542,7 +542,6 @@ class Worker(ABC):
                 durable=True,
                 arguments={
                     "x-max-priority": settings.RABBITMQ_MAX_PRIORITY,
-                    "x-max-length": 10,
                     "x-overflow": "reject-publish",
                 },
             )
@@ -581,7 +580,6 @@ def get_rabbitmq_connection():
                     durable=True,
                     arguments={
                         "x-max-priority": settings.RABBITMQ_MAX_PRIORITY,
-                        "x-max-length": 10,
                         "x-overflow": "reject-publish",
                     },
                 )
@@ -591,7 +589,6 @@ def get_rabbitmq_connection():
                     durable=True,
                     arguments={
                         "x-max-priority": settings.RABBITMQ_MAX_PRIORITY,
-                        "x-max-length": 10,
                         "x-overflow": "reject-publish",
                     },
                 )
@@ -601,7 +598,6 @@ def get_rabbitmq_connection():
                     durable=True,
                     arguments={
                         "x-max-priority": settings.RABBITMQ_MAX_PRIORITY,
-                        "x-max-length": 10,
                         "x-overflow": "reject-publish",
                     },
                 )
