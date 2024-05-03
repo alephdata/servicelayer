@@ -33,10 +33,10 @@ setup(
         "fakeredis >= 2.11.2, < 3.0.0",
         "redis <= 4.6.0",
         "sqlalchemy >= 1.4.49, < 3.0.0",
-        "structlog >= 20.2.0, < 24.0.0",
+        "structlog >= 20.2.0, < 25.0.0",
         "colorama >= 0.4.4, < 1.0.0",
         "pika >= 1.3.1, < 2.0.0",
-        "prometheus-client >= 0.17.1, < 0.20.0",
+        "prometheus-client >= 0.17.1, < 0.21.0",
     ],
     extras_require={
         "amazon": ["boto3 >= 1.11.9, <2.0.0"],
