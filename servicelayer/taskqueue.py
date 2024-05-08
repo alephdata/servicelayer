@@ -463,7 +463,9 @@ class Worker(ABC):
                     )
                 dataset.checkout_task(task.task_id, task.operation)
                 task.increment_retry_count(self.conn)
-                log.info(f"Dispatching task {task.task_id} from job {task.job_id} to worker {platform.node()}")
+                log.info(
+                    f"Dispatching task {task.task_id} from job {task.job_id} to worker {platform.node()}"
+                )
                 task = self.dispatch_task(task)
             else:
                 log.warn(f"Discarding task: {task.task_id}")
@@ -610,7 +612,7 @@ def get_rabbitmq_connection():
             pika.exceptions.AMQPConnectionError,
             pika.exceptions.AMQPError,
             ConnectionResetError,
-        )
+        ):
             log.exception(f"RabbitMQ error. Attempt: {attempt}")
         local.connection = None
 
