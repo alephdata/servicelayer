@@ -571,6 +571,7 @@ def get_rabbitmq_connection():
                         credentials=credentials,
                         heartbeat=settings.RABBITMQ_HEARTBEAT,
                         blocked_connection_timeout=settings.RABBITMQ_BLOCKED_CONNECTION_TIMEOUT,
+                        client_properties={"connection_name": f"{platform.node()}"},
                     )
                 )
                 local.connection = connection
