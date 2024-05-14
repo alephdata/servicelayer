@@ -10,7 +10,6 @@ from abc import ABC, abstractmethod
 import functools
 from queue import Queue, Empty
 import platform
-import contextvars
 
 from structlog.contextvars import clear_contextvars, bind_contextvars
 import pika
