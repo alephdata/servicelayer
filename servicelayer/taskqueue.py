@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 import functools
 from queue import Queue, Empty
 import platform
+import contextvars
 
 from structlog.contextvars import clear_contextvars, bind_contextvars
 import pika
@@ -612,6 +613,7 @@ def get_rabbitmq_connection():
         except (
             pika.exceptions.AMQPConnectionError,
             pika.exceptions.AMQPError,
+            pika.exceptions.StreamLostError,
             ConnectionResetError,
         ):
             log.exception(f"RabbitMQ error. Attempt: {attempt}")
