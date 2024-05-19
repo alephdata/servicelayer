@@ -17,6 +17,8 @@ from servicelayer.taskqueue import (
 )
 from servicelayer.util import unpack_datetime
 
+TEST_STAGE = "test-op"
+
 
 class CountingWorker(Worker):
     def dispatch_task(self, task):
@@ -29,7 +31,6 @@ class CountingWorker(Worker):
 
 class TaskQueueTest(TestCase):
     def test_task_queue(self):
-        settings.QUEUE_INGEST = "sls-queue-ingest"
         conn = get_fakeredis()
         collection_id = 2
         task_id = "test-task"
@@ -38,23 +39,24 @@ class TaskQueueTest(TestCase):
             "collection_id": 2,
             "job_id": "test-job",
             "task_id": "test-task",
-            "operation": "test-op",
+            "operation": TEST_STAGE,
             "context": {},
             "payload": {},
             "priority": priority,
         }
         connection = get_rabbitmq_connection()
         channel = connection.channel()
-        channel.queue_purge(settings.QUEUE_INGEST)
+        channel.confirm_delivery()
+        channel.queue_purge(TEST_STAGE)
+        channel.queue_declare(TEST_STAGE)
         channel.basic_publish(
             properties=pika.BasicProperties(priority=priority),
-            exchange="",
-            routing_key=settings.QUEUE_INGEST,
+            exchange="amq.topic",
+            routing_key=TEST_STAGE,
             body=json.dumps(body),
         )
         dataset = Dataset(conn=conn, name=dataset_from_collection_id(collection_id))
-        dataset.add_task(task_id, "test-op")
-        channel.close()
+        dataset.add_task(task_id, TEST_STAGE)
 
         status = dataset.get_status()
         assert status["finished"] == 0, status
@@ -66,11 +68,8 @@ class TaskQueueTest(TestCase):
         assert started < last_updated
         assert abs(started - last_updated) < datetime.timedelta(seconds=1)
 
-        worker = CountingWorker(
-            queues=[settings.QUEUE_INGEST], conn=conn, num_threads=1
-        )
+        worker = CountingWorker(stages=[TEST_STAGE], conn=conn, num_threads=1)
         worker.process(blocking=False)
-
         status = dataset.get_status()
         assert status["finished"] == 0, status
         assert status["pending"] == 0, status
@@ -81,16 +80,15 @@ class TaskQueueTest(TestCase):
 
         with patch("servicelayer.settings.WORKER_RETRY", 0):
             channel = connection.channel()
-            channel.queue_purge(settings.QUEUE_INGEST)
             channel.basic_publish(
                 properties=pika.BasicProperties(priority=priority),
-                exchange="",
-                routing_key=settings.QUEUE_INGEST,
+                exchange="amq.topic",
+                routing_key=TEST_STAGE,
                 body=json.dumps(body),
             )
-            dataset = Dataset(conn=conn, name=dataset_from_collection_id(collection_id))
-            dataset.add_task(task_id, "test-op")
             channel.close()
+            dataset = Dataset(conn=conn, name=dataset_from_collection_id(collection_id))
+            dataset.add_task(task_id, TEST_STAGE)
             with self.assertLogs(level="ERROR") as ctx:
                 worker.process(blocking=False)
             assert "Max retries reached for task test-task. Aborting." in ctx.output[0]
@@ -106,3 +104,4 @@ class TaskQueueTest(TestCase):
         last_updated = unpack_datetime(status["last_update"])
         end_time = unpack_datetime(status["end_time"])
         assert started < end_time < last_updated
+        connection.close()

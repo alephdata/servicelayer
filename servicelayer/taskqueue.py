@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 import functools
 from queue import Queue, Empty
 import platform
+import uuid
 
 from structlog.contextvars import clear_contextvars, bind_contextvars
 import pika
@@ -417,19 +418,22 @@ class Worker(ABC):
         """Non-blocking worker is used for tests only."""
         connection = get_rabbitmq_connection()
         channel = connection.channel()
-        queue_active = {queue: True for queue in self.queues}
-        while True:
-            for queue in self.queues:
-                method, properties, body = channel.basic_get(queue=queue)
-                if method is None:
-                    queue_active[queue] = False
-                    # Quit processing if all queues are inactive
-                    if not any(queue_active.values()):
-                        return
-                else:
-                    queue_active[queue] = True
+        for stage in self.stages:
+            channel.queue_declare(queue=stage)
+            channel.queue_bind(queue=stage, exchange="amq.topic", routing_key=stage)
+            for method, _properties, body in channel.consume(
+                stage,
+                inactivity_timeout=3,
+                auto_ack=True,
+            ):
+                if method:
                     task = get_task(body, method.delivery_tag)
                     self.handle(task)
+                else:
+                    break
+        channel.cancel()
+        channel.close()
+        connection.close()
 
     def process(self, blocking=True):
         if blocking:
@@ -528,17 +532,15 @@ class Worker(ABC):
         channel.basic_qos(prefetch_count=self.prefetch_count)
         on_message_callback = functools.partial(self.on_message, args=(connection,))
         for stage in self.stages:
-            result = channel.queue_declare(
-                queue="",
+            queue_name = f"{stage}-{platform.node()}-{uuid.uuid4().hex}"
+            channel.queue_declare(
+                queue=queue_name,
                 durable=True,
-                exclusive=True,
-                auto_delete=True,
                 arguments={
                     "x-max-priority": settings.RABBITMQ_MAX_PRIORITY,
                     "x-overflow": "reject-publish",
                 },
             )
-            queue_name = result.method.queue
             channel.queue_bind(
                 queue=queue_name,
                 exchange="amq.topic",
