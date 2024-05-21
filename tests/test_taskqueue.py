@@ -54,6 +54,7 @@ class TaskQueueTest(TestCase):
             exchange="amq.topic",
             routing_key=TEST_STAGE,
             body=json.dumps(body),
+            mandatory=True,
         )
         dataset = Dataset(conn=conn, name=dataset_from_collection_id(collection_id))
         dataset.add_task(task_id, TEST_STAGE)
@@ -85,6 +86,7 @@ class TaskQueueTest(TestCase):
                 exchange="amq.topic",
                 routing_key=TEST_STAGE,
                 body=json.dumps(body),
+                mandatory=True,
             )
             channel.close()
             dataset = Dataset(conn=conn, name=dataset_from_collection_id(collection_id))
