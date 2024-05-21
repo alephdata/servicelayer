@@ -47,13 +47,8 @@ class TaskQueueTest(TestCase):
         connection = get_rabbitmq_connection()
         channel = connection.channel()
         channel.confirm_delivery()
-        try:
-            channel.queue_purge(TEST_STAGE)
-        except:
-            # We do not care
-            # if the queue ain't there
-            pass
         channel.queue_declare(TEST_STAGE)
+        channel.queue_purge(TEST_STAGE)
         channel.basic_publish(
             properties=pika.BasicProperties(priority=priority),
             exchange="amq.topic",
