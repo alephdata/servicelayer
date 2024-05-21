@@ -19,7 +19,7 @@ jobs:
       run: docker compose run --rm shell make lint
     - name: Run the tests
       # Some tests rely on the package being installed
-      run: docker compose run --rm shell bash -c "make install && make tests"
+      run: docker compose run --rm shell bash -c "make install && make test-local"
     - name: Build a distribution
       run: docker compose run --rm shell python3 setup.py sdist bdist_wheel
     - name: Publish a Python distribution to PyPI

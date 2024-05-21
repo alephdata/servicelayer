@@ -15,6 +15,9 @@ dev:
 	python3 -m pip install -q -r requirements-dev.txt
 
 test:
+	docker compose run --rm shell make test-local
+
+test-local:
 	pytest --cov=servicelayer
 
 lint:
