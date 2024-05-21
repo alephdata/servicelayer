@@ -395,9 +395,12 @@ class Worker(ABC):
         self.version = version
         self.prefetch_count = prefetch_count
         self.local_queue = Queue()
+        self.periodic_timer = threading.Timer(10, self.periodic)
 
     def on_signal(self, signal, _):
         log.warning(f"Shutting down worker (signal {signal})")
+        if self.periodic_timer:
+            self.periodic_timer.cancel()
         # Exit eagerly without waiting for current task to finish running
         sys.exit(int(signal))
 
@@ -413,6 +416,8 @@ class Worker(ABC):
 
     def process_blocking(self):
         """Blocking worker thread - executes tasks from a queue and periodic tasks"""
+        self.periodic_timer.start()
+        log.info("Started periodic timer")
         while True:
             try:
                 (task, channel, connection) = self.local_queue.get(timeout=TIMEOUT)
@@ -424,7 +429,8 @@ class Worker(ABC):
                 pass
             finally:
                 clear_contextvars()
-                self.periodic()
+                if self.periodic_timer:
+                    self.periodic_timer.cancel()
 
     def process_nonblocking(self):
         """Non-blocking worker is used for tests only."""
@@ -483,6 +489,7 @@ class Worker(ABC):
         """Run after-task clean up"""
         pass
 
+    @abstractmethod
     def periodic(self):
         """Periodic tasks to run."""
         pass
