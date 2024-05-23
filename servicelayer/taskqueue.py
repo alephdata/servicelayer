@@ -562,6 +562,9 @@ def get_rabbitmq_connection():
                         client_properties={"connection_name": f"{platform.node()}"},
                     )
                 )
+                connection.channel().exchange_declare(
+                    exchange="(AMQP Default)", passive=True
+                )
                 local.connection = connection
             return local.connection
 
