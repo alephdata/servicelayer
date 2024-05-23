@@ -548,6 +548,7 @@ def get_rabbitmq_connection():
                 not hasattr(local, "connection")
                 or not local.connection
                 or not local.connection.is_open
+                or attempt > 0
             ):
                 log.debug("Establishing connection to RabbitMQ server")
                 credentials = pika.PlainCredentials(
