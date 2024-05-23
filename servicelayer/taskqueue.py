@@ -12,6 +12,8 @@ from queue import Queue, Empty
 import platform
 from collections import defaultdict
 
+import pika.spec
+
 from structlog.contextvars import clear_contextvars, bind_contextvars
 import pika
 from banal import ensure_list
@@ -550,7 +552,9 @@ def get_rabbitmq_connection():
                 or not local.connection.is_open
                 or attempt > 0
             ):
-                log.debug("Establishing connection to RabbitMQ server")
+                log.debug(
+                    f"Establishing connection to RabbitMQ server. Attempt: {attempt}"
+                )
                 credentials = pika.PlainCredentials(
                     settings.RABBITMQ_USERNAME, settings.RABBITMQ_PASSWORD
                 )
@@ -563,16 +567,24 @@ def get_rabbitmq_connection():
                         client_properties={"connection_name": f"{platform.node()}"},
                     )
                 )
-                connection.channel().exchange_declare(
-                    exchange="(AMQP Default)", passive=True
-                )
                 local.connection = connection
+
+            # Check that the connection is alive
+            result = connection.channel().exchange_declare(
+                exchange="amq.topic",
+                exchange_type=pika.exchange_type.ExchangeType.topic,
+                passive=True,
+            )
+            assert isinstance(result.method, pika.spec.Exchange.DeclareOk)
+
             return local.connection
 
         except (
             pika.exceptions.AMQPConnectionError,
             pika.exceptions.AMQPError,
+            pika.exceptions.ChannelClosedByBroker,
             pika.exceptions.StreamLostError,
+            AssertionError,
             ConnectionResetError,
         ):
             log.exception(f"RabbitMQ error. Attempt: {attempt}")
