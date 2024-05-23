@@ -570,7 +570,7 @@ def get_rabbitmq_connection():
                 local.connection = connection
 
             # Check that the connection is alive
-            result = connection.channel().exchange_declare(
+            result = local.connection.channel().exchange_declare(
                 exchange="amq.topic",
                 exchange_type=pika.exchange_type.ExchangeType.topic,
                 passive=True,
