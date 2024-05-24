@@ -553,7 +553,8 @@ def get_rabbitmq_connection():
                 or attempt > 0
             ):
                 log.debug(
-                    f"Establishing connection to RabbitMQ server. Attempt: {attempt}"
+                    f"Establishing RabbitMQ connection. "
+                    f"Attempt: {attempt}/{service_retries().stop}"
                 )
                 credentials = pika.PlainCredentials(
                     settings.RABBITMQ_USERNAME, settings.RABBITMQ_PASSWORD
@@ -589,7 +590,7 @@ def get_rabbitmq_connection():
         ):
             log.error(
                 f"Failed to establish RabbitMQ connection."
-                f"Attempt: {attempt}/{service_retries()}"
+                f"Attempt: {attempt}/{service_retries().stop}"
             )
             # Don't raise this exception on the first attempt. Occasionally connections
             # get dropped and re-established and that is not something we care to know.
