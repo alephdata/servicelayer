@@ -588,7 +588,8 @@ def get_rabbitmq_connection():
             ConnectionResetError,
         ):
             log.error(
-                f"Failed to establish RabbitMQ connection. Attempt: {attempt}/{service_retries()}"
+                f"Failed to establish RabbitMQ connection."
+                f"Attempt: {attempt}/{service_retries()}"
             )
             # Don't raise this exception on the first attempt. Occasionally connections
             # get dropped and re-established and that is not something we care to know.
