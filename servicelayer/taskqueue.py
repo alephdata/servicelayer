@@ -411,6 +411,7 @@ class Worker(ABC):
         """Blocking worker thread - executes tasks from a queue and periodic tasks"""
         while True:
             try:
+                self.periodic()
                 (task, channel, connection) = self.local_queue.get(timeout=TIMEOUT)
                 apply_task_context(task, v=self.version)
                 self.handle(task)
@@ -420,7 +421,6 @@ class Worker(ABC):
                 pass
             finally:
                 clear_contextvars()
-                self.periodic()
 
     def process_nonblocking(self):
         """Non-blocking worker is used for tests only."""
