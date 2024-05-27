@@ -17,7 +17,6 @@ import pika.spec
 from structlog.contextvars import clear_contextvars, bind_contextvars
 import pika
 from banal import ensure_list
-import sentry_sdk
 
 from servicelayer.cache import get_redis, make_key
 from servicelayer.util import pack_now, unpack_int
@@ -547,7 +546,6 @@ class Worker(ABC):
 
 def get_rabbitmq_connection():
     for attempt in service_retries():
-        sentry_sdk.set_tag("attempt", attempt)
         try:
             if (
                 not hasattr(local, "connection")
