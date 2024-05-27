@@ -591,10 +591,15 @@ def get_rabbitmq_connection():
             AssertionError,
             ConnectionResetError,
         ):
-            log.exception(
-                f"Failed to establish RabbitMQ connection."
-                f"Attempt: {attempt}/{service_retries().stop}"
-            )
+            if attempt == 0:
+                log.debug(
+                    "First attempt to establish RabbitMQ connection failed. Retrying."
+                )
+            else:
+                log.exception(
+                    f"Failed to establish RabbitMQ connection."
+                    f"Attempt: {attempt}/{service_retries().stop}"
+                )
         local.connection = None
 
         backoff(failures=attempt)
