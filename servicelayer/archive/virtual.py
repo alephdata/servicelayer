@@ -5,7 +5,7 @@ import threading
 from normality import safe_filename
 
 from servicelayer.archive.archive import Archive
-from servicelayer.archive.util import ensure_path
+from servicelayer.archive.util import ensure_path, sanitize_checksum
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +33,7 @@ class VirtualArchive(Archive):
         """Delete the local cached version of the file."""
         if content_hash is None:
             return
+        content_hash = sanitize_checksum(content_hash)
         path = self._get_local_prefix(content_hash, temp_path=temp_path)
         try:
             shutil.rmtree(path, ignore_errors=True)

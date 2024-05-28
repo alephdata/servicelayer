@@ -5,7 +5,7 @@ import logging
 from normality import safe_filename
 
 from servicelayer.archive.archive import Archive
-from servicelayer.archive.util import ensure_path, checksum, BUF_SIZE
+from servicelayer.archive.util import ensure_path, checksum, sanitize_checksum, BUF_SIZE
 from servicelayer.archive.util import path_prefix, path_content_hash
 
 log = logging.getLogger(__name__)
@@ -33,6 +33,8 @@ class FileArchive(Archive):
         """Import the given file into the archive."""
         if content_hash is None:
             content_hash = checksum(file_path)
+        else:
+            content_hash = sanitize_checksum(content_hash)
 
         if content_hash is None:
             return
@@ -51,6 +53,7 @@ class FileArchive(Archive):
         return content_hash
 
     def load_file(self, content_hash, file_name=None, temp_path=None):
+        content_hash = sanitize_checksum(content_hash)
         return self._locate_key(content_hash)
 
     def list_files(self, prefix=None):
@@ -67,6 +70,7 @@ class FileArchive(Archive):
                 yield path_content_hash(file_path)
 
     def delete_file(self, content_hash):
+        content_hash = sanitize_checksum(content_hash)
         prefix = path_prefix(content_hash)
         if prefix is None:
             return
