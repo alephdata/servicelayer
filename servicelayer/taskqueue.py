@@ -191,7 +191,7 @@ class Dataset:
             _should_execute = self.conn.sismember(
                 self.pending_key, task_id
             ) or self.conn.sismember(self.running_key, task_id)
-            if not _should_execute and attempt < settings.WORKER_RETRY:
+            if not _should_execute and attempt - 1 in service_retries():
                 # Sometimes for new tasks the check fails because the Redis
                 # state gets updated only after the task gets written to disk
                 # by RabbitMQ whereas the worker consumer gets the task before
@@ -414,7 +414,7 @@ class Worker(ABC):
                 self.periodic()
                 (task, channel, connection) = self.local_queue.get(timeout=TIMEOUT)
                 apply_task_context(task, v=self.version)
-                self.handle(task)
+                self.handle(task, channel)
                 cb = functools.partial(self.ack_message, task, channel)
                 connection.add_callback_threadsafe(cb)
             except Empty:
@@ -438,7 +438,7 @@ class Worker(ABC):
                 else:
                     queue_active[queue] = True
                     task = get_task(body, method.delivery_tag)
-                    self.handle(task)
+                    self.handle(task, channel)
 
     def process(self, blocking=True):
         if blocking:
@@ -446,7 +446,7 @@ class Worker(ABC):
         else:
             self.process_nonblocking()
 
-    def handle(self, task: Task):
+    def handle(self, task: Task, channel):
         """Execute a task."""
         try:
             dataset = Dataset(
@@ -465,7 +465,13 @@ class Worker(ABC):
                 )
                 task = self.dispatch_task(task)
             else:
-                log.warn(f"Discarding task: {task.task_id}")
+                log.info(
+                    f"Sending a NACK for message {task.delivery_tag}"
+                    f" for task_id {task.task_id}."
+                    f"Message will be requeued."
+                )
+                if channel.is_open:
+                    channel.basic_nack(task.delivery_tag)
         except Exception:
             log.exception("Error in task handling")
         finally:
