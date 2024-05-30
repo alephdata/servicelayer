@@ -414,7 +414,7 @@ class Worker(ABC):
                 self.periodic()
                 (task, channel, connection) = self.local_queue.get(timeout=TIMEOUT)
                 apply_task_context(task, v=self.version)
-                self.handle(task, channel
+                self.handle(task, channel)
                 cb = functools.partial(self.ack_message, task, channel)
                 connection.add_callback_threadsafe(cb)
             except Empty:
