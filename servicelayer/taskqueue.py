@@ -438,7 +438,7 @@ class Worker(ABC):
                 else:
                     queue_active[queue] = True
                     task = get_task(body, method.delivery_tag)
-                    self.handle(task)
+                    self.handle(task, channel)
 
     def process(self, blocking=True):
         if blocking:
