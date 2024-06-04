@@ -6,6 +6,8 @@ from threading import Thread
 from banal import ensure_list
 from abc import ABC, abstractmethod
 
+from prometheus_client import start_http_server
+
 from servicelayer import settings
 from servicelayer.jobs import Stage
 from servicelayer.cache import get_redis

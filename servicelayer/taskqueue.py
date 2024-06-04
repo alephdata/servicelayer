@@ -15,6 +15,7 @@ from threading import Thread
 from timeit import default_timer
 
 import pika.spec
+from prometheus_client import start_http_server
 
 from structlog.contextvars import clear_contextvars, bind_contextvars
 import pika
