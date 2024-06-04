@@ -93,7 +93,7 @@ class Worker(ABC):
         def run_server():
             port = settings.PROMETHEUS_PORT
             log.info(f"Running Prometheus metrics server on port {port}")
-            metrics.start_http_server(port)
+            start_http_server(port)
 
         thread = Thread(target=run_server)
         thread.start()
