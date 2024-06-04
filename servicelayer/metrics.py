@@ -6,6 +6,11 @@ from prometheus_client import (
     PROCESS_COLLECTOR,
 )
 
+# These definitions should be moved as close to the place
+# where they are used as possible. However, since we
+# support both a homebrewed Worker and one based on
+# RabbitMQ, these definitions would come into conflict.
+
 REGISTRY.unregister(GC_COLLECTOR)
 REGISTRY.unregister(PROCESS_COLLECTOR)
 
