@@ -20,19 +20,11 @@ from structlog.contextvars import clear_contextvars, bind_contextvars
 import pika
 from banal import ensure_list
 
-from prometheus_client import (
-    start_http_server,
-    Counter,
-    Histogram,
-    REGISTRY,
-    GC_COLLECTOR,
-    PROCESS_COLLECTOR,
-)
-
 from servicelayer.cache import get_redis, make_key
 from servicelayer.util import pack_now, unpack_int
 from servicelayer import settings
 from servicelayer.util import service_retries, backoff
+from servicelayer import metrics
 
 log = logging.getLogger(__name__)
 local = threading.local()
@@ -41,50 +33,6 @@ PREFIX = "tq"
 NO_COLLECTION = "null"
 
 TIMEOUT = 5
-
-REGISTRY.unregister(GC_COLLECTOR)
-REGISTRY.unregister(PROCESS_COLLECTOR)
-
-TASKS_STARTED = Counter(
-    "servicelayer_tasks_started_total",
-    "Number of tasks that a worker started processing",
-    ["stage"],
-)
-
-TASKS_SUCCEEDED = Counter(
-    "servicelayer_tasks_succeeded_total",
-    "Number of successfully processed tasks",
-    ["stage", "retries"],
-)
-
-TASKS_FAILED = Counter(
-    "servicelayer_tasks_failed_total",
-    "Number of failed tasks",
-    ["stage", "retries", "failed_permanently"],
-)
-
-TASK_DURATION = Histogram(
-    "servicelayer_task_duration_seconds",
-    "Task duration in seconds",
-    ["stage"],
-    # The bucket sizes are a rough guess right now, we might want to adjust
-    # them later based on observed runtimes
-    buckets=[
-        0.25,
-        0.5,
-        1,
-        5,
-        15,
-        30,
-        60,
-        60 * 15,
-        60 * 30,
-        60 * 60,
-        60 * 60 * 2,
-        60 * 60 * 6,
-        60 * 60 * 24,
-    ],
-)
 
 
 @dataclass
@@ -440,6 +388,17 @@ class Worker(ABC):
         version=None,
         prefetch_count_mapping=defaultdict(lambda: 1),
     ):
+        if settings.SENTRY_DSN:
+            import sentry_sdk
+
+            sentry_sdk.init(
+                dsn=settings.SENTRY_DSN,
+                traces_sample_rate=0,
+                release=settings.SENTRY_RELEASE,
+                environment=settings.SENTRY_ENVIRONMENT,
+                send_default_pii=False,
+            )
+
         self.conn = conn or get_redis()
         self.num_threads = num_threads
         self.queues = ensure_list(queues)
@@ -523,7 +482,7 @@ class Worker(ABC):
             if dataset.should_execute(task.task_id):
                 task_retry_count = task.get_retry_count(self.conn)
                 if task_retry_count:
-                    TASKS_FAILED.labels(
+                    metrics.TASKS_FAILED.labels(
                         stage=task.operation,
                         retries=task_retry_count,
                         failed_permanently=False,
@@ -538,7 +497,7 @@ class Worker(ABC):
                 task.increment_retry_count(self.conn)
 
                 # Emit Prometheus metrics
-                TASKS_STARTED.labels(stage=task.operation).inc()
+                metrics.TASKS_STARTED.labels(stage=task.operation).inc()
                 start_time = default_timer()
                 log.info(
                     f"Dispatching task {task.task_id} from job {task.job_id}"
@@ -549,8 +508,8 @@ class Worker(ABC):
 
                 # Emit Prometheus metrics
                 duration = max(0, default_timer() - start_time)
-                TASK_DURATION.labels(stage=task.operation).observe(duration)
-                TASKS_SUCCEEDED.labels(
+                metrics.TASK_DURATION.labels(stage=task.operation).observe(duration)
+                metrics.TASKS_SUCCEEDED.labels(
                     stage=task.operation, retries=task_retry_count
                 ).inc()
             else:
@@ -562,7 +521,7 @@ class Worker(ABC):
                 # In this case, a task ID was found neither in the
                 # list of Pending, nor the list of Running tasks
                 # in Redis. It was never attempted.
-                TASKS_FAILED.labels(
+                metrics.TASKS_FAILED.labels(
                     stage=task.operation,
                     retries=0,
                     failed_permanently=True,
