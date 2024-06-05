@@ -406,6 +406,16 @@ class Worker(ABC):
         self.version = version
         self.local_queue = Queue()
         self.prefetch_count_mapping = prefetch_count_mapping
+        if settings.SENTRY_DSN:
+            import sentry_sdk
+
+            sentry_sdk.init(
+                dsn=settings.SENTRY_DSN,
+                traces_sample_rate=0,
+                release=settings.SENTRY_RELEASE,
+                environment=settings.SENTRY_ENVIRONMENT,
+                send_default_pii=False,
+            )
 
     def run_prometheus_server(self):
         if not settings.PROMETHEUS_ENABLED:
