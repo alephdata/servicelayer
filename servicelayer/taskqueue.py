@@ -443,6 +443,10 @@ class Worker(ABC):
         """
         connection = args[0]
         task = get_task(body, method.delivery_tag)
+        # the task needs to be acknowledged in the same channel that it was
+        # received. So store the channel. This is useful when executing batched
+        # indexing tasks since they are acknowledged late.
+        task._channel = channel
         self.local_queue.put((task, channel, connection))
 
     def process_blocking(self):
