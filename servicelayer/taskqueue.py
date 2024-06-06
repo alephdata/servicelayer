@@ -501,7 +501,7 @@ class Worker(ABC):
             # exists in Redis in the "running" or "pending" lists.
             should_execute = dataset.should_execute(task.task_id)
             if should_execute or task_retry_count <= settings.WORKER_RETRY:
-                # Increase the counter of tasks that have failed but will be re-attempted
+                # Increase the num. of tasks that have failed but will be reattempted
                 if task_retry_count:
                     metrics.TASKS_FAILED.labels(
                         stage=task.operation,
@@ -531,9 +531,15 @@ class Worker(ABC):
             else:
                 reason = ""
                 if not should_execute:
-                    reason = f"Task {task.task_id} was not in found either the Running nor Pending lists"
+                    reason = (
+                        f"Task {task.task_id} was not in found"
+                        f"neither the Running nor Pending lists"
+                    )
                 elif task_retry_count > settings.WORKER_RETRY:
-                    reason = f"Task {task.task_id} was attempted more than {settings.WORKER_RETRY} times"
+                    reason = (
+                        f"Task {task.task_id} was"
+                        f"attempted more than {settings.WORKER_RETRY} times"
+                    )
                     # This task can be tracked as having failed permanently.
                     metrics.TASKS_FAILED.labels(
                         stage=task.operation,
