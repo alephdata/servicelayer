@@ -376,10 +376,6 @@ def declare_rabbitmq_queue(channel, queue, prefetch_count=1):
     )
 
 
-class MaxRetriesExceededError(Exception):
-    pass
-
-
 class Worker(ABC):
     def __init__(
         self,
@@ -494,14 +490,9 @@ class Worker(ABC):
             dataset = Dataset(
                 conn=self.conn, name=dataset_from_collection_id(task.collection_id)
             )
-            # The worker will attempt to complete a task a number of times
-            # defined by WORKER_RETRY.
-            task_retry_count = task.get_retry_count(self.conn)
-            # The worker will only attempt to run a task of the task_id
-            # exists in Redis in the "running" or "pending" lists.
             should_execute = dataset.should_execute(task.task_id)
-            if should_execute or task_retry_count <= settings.WORKER_RETRY:
-                # Increase the num. of tasks that have failed but will be reattempted
+            task_retry_count = task.get_retry_count(self.conn)
+            if should_execute and task_retry_count <= settings.WORKER_RETRY:
                 if task_retry_count:
                     metrics.TASKS_FAILED.labels(
                         stage=task.operation,
@@ -512,7 +503,6 @@ class Worker(ABC):
                 dataset.checkout_task(task.task_id, task.operation)
                 task.increment_retry_count(self.conn)
 
-                # Emit Prometheus metrics
                 metrics.TASKS_STARTED.labels(stage=task.operation).inc()
                 start_time = default_timer()
                 log.info(
@@ -522,7 +512,6 @@ class Worker(ABC):
 
                 task = self.dispatch_task(task)
 
-                # Emit Prometheus metrics
                 duration = max(0, default_timer() - start_time)
                 metrics.TASK_DURATION.labels(stage=task.operation).observe(duration)
                 metrics.TASKS_SUCCEEDED.labels(
@@ -531,13 +520,10 @@ class Worker(ABC):
             else:
                 reason = ""
                 if not should_execute:
+                    reason = f"Task {task.task_id} neither in 'running' nor 'pending'"
+                else:
                     reason = (
-                        f"Task {task.task_id} was not in found"
-                        f"neither the Running nor Pending lists"
-                    )
-                elif task_retry_count > settings.WORKER_RETRY:
-                    reason = (
-                        f"Task {task.task_id} was"
+                        f"Task {task.task_id} was "
                         f"attempted more than {settings.WORKER_RETRY} times"
                     )
                     # This task can be tracked as having failed permanently.
@@ -552,8 +538,7 @@ class Worker(ABC):
                     f"{reason}. Message will be requeued."
                 )
 
-                if channel.is_open:
-                    channel.basic_nack(task.delivery_tag)
+                channel.basic_nack(task.delivery_tag)
         except Exception:
             log.exception("Error in task handling")
         finally:
