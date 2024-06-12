@@ -107,7 +107,6 @@ class TaskQueueTest(TestCase):
         end_time = unpack_datetime(status["end_time"])
         assert started < end_time < last_updated
 
-    @skip("Unfinished")
     @patch("servicelayer.taskqueue.Dataset.should_execute")
     def test_task_that_shouldnt_execute(self, mock_should_execute):
         test_queue_name = "sls-queue-ingest"
@@ -147,6 +146,18 @@ class TaskQueueTest(TestCase):
 
         worker = CountingWorker(queues=[test_queue_name], conn=conn, num_threads=1)
         assert not dataset.should_execute(task_id=task_id)
-        worker.process(blocking=False)
+        with patch.object(
+            worker,
+            attribute="dispatch_task",
+            return_value=None,
+        ) as dispatch_fn:
+            with patch.object(
+                pika.channel.Channel,
+                attribute="basic_nack",
+                return_value=None,
+            ) as nack_fn:
+                worker.process(blocking=False)
+                nack_fn.assert_any_call(delivery_tag=1, multiple=False, requeue=True)
+                dispatch_fn.assert_not_called()
 
         channel.close()
