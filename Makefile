@@ -17,6 +17,9 @@ dev:
 
 test:
 	docker-compose run --rm shell pytest --cov=servicelayer
+	@echo "⚠️ you might notice a warning about a fairy from SQLAlchemy"
+	@echo "this is fixed in a newer release -- see https://github.com/sqlalchemy/sqlalchemy/issues/10414"
+	@echo "we are ignoring this for now"
 
 lint:
 	ruff check .
