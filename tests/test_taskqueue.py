@@ -20,18 +20,20 @@ from servicelayer.util import unpack_datetime
 
 
 class CountingWorker(Worker):
-    def dispatch_task(self, task):
+    def dispatch_task(self, task: Task) -> Task:
         assert isinstance(task, Task), task
         if not hasattr(self, "test_done"):
             self.test_done = 0
         self.test_done += 1
         self.test_task = task
+        return task
 
 
 class TaskQueueTest(TestCase):
     def test_task_queue(self):
         test_queue_name = "sls-queue-ingest"
         conn = get_fakeredis()
+        conn.flushdb()
         collection_id = 2
         task_id = "test-task"
         priority = randrange(1, settings.RABBITMQ_MAX_PRIORITY + 1)
@@ -110,6 +112,7 @@ class TaskQueueTest(TestCase):
     def test_task_that_shouldnt_execute(self, mock_should_execute):
         test_queue_name = "sls-queue-ingest"
         conn = get_fakeredis()
+        conn.flushdb()
         collection_id = 2
         task_id = "test-task"
         priority = randrange(1, settings.RABBITMQ_MAX_PRIORITY + 1)
@@ -142,6 +145,10 @@ class TaskQueueTest(TestCase):
 
         dataset = Dataset(conn=conn, name=dataset_from_collection_id(collection_id))
         dataset.add_task(task_id, "test-op")
+        status = dataset.get_active_dataset_status(conn=conn)
+        stage = status["datasets"]["2"]["stages"][0]
+        assert stage["pending"] == 1
+        assert stage["running"] == 0
 
         worker = CountingWorker(queues=[test_queue_name], conn=conn, num_threads=1)
         assert not dataset.should_execute(task_id=task_id)
@@ -160,3 +167,8 @@ class TaskQueueTest(TestCase):
                 dispatch_fn.assert_not_called()
 
         channel.close()
+
+        status = dataset.get_active_dataset_status(conn=conn)
+        stage = status["datasets"]["2"]["stages"][0]
+        assert stage["pending"] == 1
+        assert stage["running"] == 0
