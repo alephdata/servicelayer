@@ -93,7 +93,15 @@ class TaskQueueTest(TestCase):
             dataset.add_task(task_id, "test-op")
             channel.close()
             with self.assertLogs(level="ERROR") as ctx:
-                worker.process(blocking=False)
+                with patch.object(
+                    pika.channel.Channel,
+                    attribute="basic_nack",
+                    return_value=None,
+                ) as nack_fn:
+                    worker.process(blocking=False)
+                    nack_fn.assert_any_call(
+                        delivery_tag=1, multiple=False, requeue=False
+                    )
             assert "Max retries reached for task test-task. Aborting." in ctx.output[0]
             # Assert that retry count stays the same
             assert task.get_retry_count(conn) == 1
