@@ -319,7 +319,6 @@ class Dataset:
             f" for retry after NACK"
         )
 
-        pipe.sadd(make_key(stage_key, "pending"), task.task_id)
         pipe.srem(make_key(stage_key, "running"), task.task_id)
         pipe.delete(task.retry_key)
         pipe.srem(stage_key, task.task_id)
@@ -335,6 +334,28 @@ class Dataset:
 
     def get_stage_key(self, stage):
         return make_key(PREFIX, "qds", self.name, stage)
+
+    def is_task_tracked(self, task: Task):
+        tracked = True
+
+        pipe = self.conn.pipeline()
+        stage_key = self.get_stage_key(task.operation)
+        dataset = dataset = dataset_from_collection_id(task.collection_id)
+        task_id = task.task_id
+        stage = task.operation
+
+        # A task is considered tracked if
+        # the dataset is in the list of active datasets
+        if dataset not in self.conn.smembers(self.key):
+            tracked = False
+        # and the stage is in the list of active stages
+        elif stage not in self.conn.smembers(self.active_stages_key):
+            tracked = False
+        # and the task_id is in the list of task_ids per stage
+        elif task_id not in self.conn.smembers(stage_key):
+            tracked = False
+
+        return tracked
 
 
 def get_task(body, delivery_tag) -> Task:
@@ -624,10 +645,13 @@ class Worker(ABC):
 
     def nack_message(self, task, channel, requeue=True):
         """NACK task and update status."""
+
         apply_task_context(task, v=self.version)
         log.info(f"NACKing message {task.delivery_tag} for task_id {task.task_id}")
         dataset = task.get_dataset(conn=self.conn)
         # Sync state to redis
+        if not dataset.is_task_tracked(task):
+            dataset.add_task()
         dataset.mark_for_retry(task)
         if channel.is_open:
             channel.basic_nack(delivery_tag=task.delivery_tag, requeue=requeue)
