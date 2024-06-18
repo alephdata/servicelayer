@@ -8,7 +8,6 @@ build-docker:
 
 install:
 	pip install -q -e .
-	pip install -q twine coverage nose moto boto3
 
 dev:
 	python3 -m pip install --upgrade pip setuptools
@@ -16,7 +15,10 @@ dev:
 	python3 -m pip install -q -r requirements-dev.txt
 
 test:
-	docker-compose run --rm shell pytest --cov=servicelayer
+	docker compose run --rm shell make test-local
+
+test-local:
+	pytest --cov=servicelayer
 
 lint:
 	ruff check .
