@@ -125,14 +125,16 @@ class TaskQueueTest(TestCase):
         task_id = "test-task"
         priority = randrange(1, settings.RABBITMQ_MAX_PRIORITY + 1)
         body = {
-            "collection_id": 2,
-            "job_id": "test-job",
             "task_id": "test-task",
+            "job_id": "test-job",
+            "delivery_tag": 0,
             "operation": "test-op",
             "context": {},
             "payload": {},
             "priority": priority,
+            "collection_id": 2,
         }
+
         connection = get_rabbitmq_connection()
         channel = connection.channel()
         declare_rabbitmq_queue(channel, test_queue_name)
@@ -180,3 +182,4 @@ class TaskQueueTest(TestCase):
         stage = status["datasets"]["2"]["stages"][0]
         assert stage["pending"] == 1
         assert stage["running"] == 0
+        assert dataset.is_task_tracked(Task(**body))
