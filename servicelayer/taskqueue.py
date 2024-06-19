@@ -650,7 +650,7 @@ class Worker(ABC):
         dataset = task.get_dataset(conn=self.conn)
         # Sync state to redis
         if not dataset.is_task_tracked(task):
-            dataset.add_task()
+            dataset.add_task(task.task_id, task.operation)
         dataset.mark_for_retry(task)
         if channel.is_open:
             channel.basic_nack(delivery_tag=task.delivery_tag, requeue=requeue)
