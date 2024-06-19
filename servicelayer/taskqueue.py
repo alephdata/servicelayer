@@ -338,7 +338,6 @@ class Dataset:
     def is_task_tracked(self, task: Task):
         tracked = True
 
-        pipe = self.conn.pipeline()
         stage_key = self.get_stage_key(task.operation)
         dataset = dataset = dataset_from_collection_id(task.collection_id)
         task_id = task.task_id
