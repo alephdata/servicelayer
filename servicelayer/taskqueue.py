@@ -13,6 +13,8 @@ import platform
 from collections import defaultdict
 from threading import Thread
 from timeit import default_timer
+import uuid
+from random import randrange
 
 import pika.spec
 from prometheus_client import start_http_server
@@ -753,3 +755,70 @@ def get_rabbitmq_connection():
 
         backoff(failures=attempt)
     raise RuntimeError("Could not connect to RabbitMQ")
+
+
+def get_task_count(collection, redis_conn) -> int:
+    """Get the total task count for a given dataset."""
+    status = Dataset.get_active_dataset_status(conn=redis_conn)
+    try:
+        collection = status["datasets"][dataset_from_collection(collection)]
+        total = collection["finished"] + collection["running"] + collection["pending"]
+    except KeyError:
+        total = 0
+    return total
+
+
+def get_priority(collection, redis_conn) -> int:
+    """
+    Priority buckets for tasks based on the total (pending + running) task count.
+    """
+    total_task_count = get_task_count(collection, redis_conn)
+    if total_task_count < 500:
+        return randrange(7, 9)
+    elif total_task_count < 10000:
+        return randrange(4, 7)
+    return randrange(1, 4)
+
+
+def dataset_from_collection(collection):
+    """servicelayer dataset from a collection"""
+    if collection is None:
+        return NO_COLLECTION
+    return str(collection.id)
+
+
+def queue_task(
+    rmq_conn, redis_conn, collection, stage, job_id=None, context=None, **payload
+):
+    task_id = uuid.uuid4().hex
+    priority = get_priority(collection, redis_conn)
+    body = {
+        "collection_id": dataset_from_collection(collection),
+        "job_id": job_id or uuid.uuid4().hex,
+        "task_id": task_id,
+        "operation": stage,
+        "context": context,
+        "payload": payload,
+        "priority": priority,
+    }
+    try:
+        channel = rmq_conn.channel()
+        channel.confirm_delivery()
+        channel.basic_publish(
+            exchange="",
+            routing_key=stage,
+            body=json.dumps(body),
+            properties=pika.BasicProperties(
+                delivery_mode=pika.spec.PERSISTENT_DELIVERY_MODE, priority=priority
+            ),
+        )
+        dataset = Dataset(conn=redis_conn, name=dataset_from_collection(collection))
+        dataset.add_task(task_id, stage)
+    except (pika.exceptions.UnroutableError, pika.exceptions.AMQPConnectionError):
+        log.exception("Error while queuing task")
+    finally:
+        try:
+            if channel:
+                channel.close()
+        except pika.exceptions.ChannelWrongStateError:
+            log.exception("Failed to explicitly close RabbitMQ channel.")
