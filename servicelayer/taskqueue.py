@@ -822,3 +822,18 @@ def queue_task(
                 channel.close()
         except pika.exceptions.ChannelWrongStateError:
             log.exception("Failed to explicitly close RabbitMQ channel.")
+
+
+def flush_queues(rmq_conn, redis_conn, queues):
+    try:
+        channel = rmq_conn.channel()
+        for queue in queues:
+            try:
+                channel.queue_purge(queue)
+            except ValueError:
+                logging.exception(f"Error while flushing the {queue} queue")
+        channel.close()
+    except pika.exceptions.AMQPError:
+        logging.exception("Error while flushing task queue")
+    for key in redis_conn.scan_iter(PREFIX + "*"):
+        redis_conn.delete(key)
