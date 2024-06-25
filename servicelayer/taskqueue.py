@@ -358,6 +358,18 @@ class Dataset:
 
         return tracked
 
+    @classmethod
+    def is_low_prio(cls, conn, collection_id):
+        """This Dataset is on the low prio list."""
+        key = make_key(PREFIX, "prio", "low")
+        return conn.sismember(key, collection_id)
+
+    @classmethod
+    def is_high_prio(cls, conn, collection_id):
+        """This Dataset is on the high prio list."""
+        key = make_key(PREFIX, "prio", "high")
+        return conn.sismember(key, collection_id)
+
 
 def get_task(body, delivery_tag) -> Task:
     body = json.loads(body)
@@ -772,6 +784,10 @@ def get_priority(collection_id, redis_conn) -> int:
     """
     Priority buckets for tasks based on the total (pending + running) task count.
     """
+    if collection_id and Dataset.is_high_prio(redis_conn, collection_id):
+        return 9
+    if collection_id and Dataset.is_low_prio(redis_conn, collection_id):
+        return 0
     total_task_count = get_task_count(collection_id, redis_conn)
     if total_task_count < 500:
         return randrange(7, 9)

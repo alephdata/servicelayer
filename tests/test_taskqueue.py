@@ -259,3 +259,23 @@ def test_get_priority_bucket():
     ):
         assert get_task_count(collection_id, redis) == 10001
         assert get_priority(collection_id, redis) in (1, 2, 3)
+
+
+def test_get_priority_lists():
+    redis = get_fakeredis()
+    collection_id = 1
+
+    assert Dataset.is_high_prio(redis, collection_id) is False
+    assert Dataset.is_low_prio(redis, collection_id) is False
+
+    redis.sadd("tq:prio:low", "1")
+    redis.sadd("tq:prio:high", "2")
+
+    assert Dataset.is_low_prio(redis, 1) is True
+    assert Dataset.is_high_prio(redis, 1) is False
+
+    assert Dataset.is_low_prio(redis, 2) is False
+    assert Dataset.is_high_prio(redis, 2) is True
+
+    assert get_priority(1, redis) == 0
+    assert get_priority(2, redis) == 9
