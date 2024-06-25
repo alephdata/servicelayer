@@ -757,22 +757,22 @@ def get_rabbitmq_connection():
     raise RuntimeError("Could not connect to RabbitMQ")
 
 
-def get_task_count(collection, redis_conn) -> int:
+def get_task_count(collection_id, redis_conn) -> int:
     """Get the total task count for a given dataset."""
     status = Dataset.get_active_dataset_status(conn=redis_conn)
     try:
-        collection = status["datasets"][dataset_from_collection(collection)]
+        collection = status["datasets"][str(collection_id)]
         total = collection["finished"] + collection["running"] + collection["pending"]
     except KeyError:
         total = 0
     return total
 
 
-def get_priority(collection, redis_conn) -> int:
+def get_priority(collection_id, redis_conn) -> int:
     """
     Priority buckets for tasks based on the total (pending + running) task count.
     """
-    total_task_count = get_task_count(collection, redis_conn)
+    total_task_count = get_task_count(collection_id, redis_conn)
     if total_task_count < 500:
         return randrange(7, 9)
     elif total_task_count < 10000:
@@ -788,12 +788,12 @@ def dataset_from_collection(collection):
 
 
 def queue_task(
-    rmq_conn, redis_conn, collection, stage, job_id=None, context=None, **payload
+    rmq_conn, redis_conn, collection_id, stage, job_id=None, context=None, **payload
 ):
     task_id = uuid.uuid4().hex
-    priority = get_priority(collection, redis_conn)
+    priority = get_priority(collection_id, redis_conn)
     body = {
-        "collection_id": dataset_from_collection(collection),
+        "collection_id": collection_id,
         "job_id": job_id or uuid.uuid4().hex,
         "task_id": task_id,
         "operation": stage,
@@ -812,7 +812,7 @@ def queue_task(
                 delivery_mode=pika.spec.PERSISTENT_DELIVERY_MODE, priority=priority
             ),
         )
-        dataset = Dataset(conn=redis_conn, name=dataset_from_collection(collection))
+        dataset = Dataset(conn=redis_conn, name=str(collection_id))
         dataset.add_task(task_id, stage)
     except (pika.exceptions.UnroutableError, pika.exceptions.AMQPConnectionError):
         log.exception("Error while queuing task")
