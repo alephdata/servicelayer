@@ -15,6 +15,7 @@ from servicelayer.taskqueue import (
     get_rabbitmq_connection,
     dataset_from_collection_id,
     declare_rabbitmq_queue,
+    flush_queues,
 )
 from servicelayer.util import unpack_datetime
 
@@ -190,9 +191,9 @@ class TaskQueueTest(TestCase):
 
 
 def test_get_priority_bucket():
-    # flush_queue()
     redis = get_fakeredis()
     rmq = get_rabbitmq_connection()
+    flush_queues(rmq, redis, ["index"])
     collection = Mock(id=1)
 
     assert get_task_count(collection, redis) == 0
