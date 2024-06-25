@@ -21,8 +21,6 @@ from servicelayer.util import unpack_datetime
 
 from servicelayer.taskqueue import get_priority, get_task_count, queue_task
 
-from unittest.mock import Mock
-
 
 class CountingWorker(Worker):
     def dispatch_task(self, task: Task) -> Task:
@@ -194,15 +192,15 @@ def test_get_priority_bucket():
     redis = get_fakeredis()
     rmq = get_rabbitmq_connection()
     flush_queues(rmq, redis, ["index"])
-    collection = Mock(id=1)
+    collection_id = 1
 
-    assert get_task_count(collection, redis) == 0
-    assert get_priority(collection, redis) in (7, 8)
+    assert get_task_count(collection_id, redis) == 0
+    assert get_priority(collection_id, redis) in (7, 8)
 
-    queue_task(rmq, redis, collection, "index")
+    queue_task(rmq, redis, collection_id, "index")
 
-    assert get_task_count(collection, redis) == 1
-    assert get_priority(collection, redis) in (7, 8)
+    assert get_task_count(collection_id, redis) == 1
+    assert get_priority(collection_id, redis) in (7, 8)
 
     with patch.object(
         Dataset,
@@ -230,8 +228,8 @@ def test_get_priority_bucket():
             },
         },
     ):
-        assert get_task_count(collection, redis) == 9999
-        assert get_priority(collection, redis) in (4, 5, 6)
+        assert get_task_count(collection_id, redis) == 9999
+        assert get_priority(collection_id, redis) in (4, 5, 6)
 
     with patch.object(
         Dataset,
@@ -259,5 +257,5 @@ def test_get_priority_bucket():
             },
         },
     ):
-        assert get_task_count(collection, redis) == 10001
-        assert get_priority(collection, redis) in (1, 2, 3)
+        assert get_task_count(collection_id, redis) == 10001
+        assert get_priority(collection_id, redis) in (1, 2, 3)
