@@ -187,6 +187,8 @@ class TaskQueueTest(TestCase):
 def test_get_priority_bucket():
     redis = get_fakeredis()
     rmq_channel = get_rabbitmq_channel()
+    rmq_channel.queue_delete("index")
+    declare_rabbitmq_queue(rmq_channel, "index")
     flush_queues(rmq_channel, redis, ["index"])
     collection_id = 1
 
