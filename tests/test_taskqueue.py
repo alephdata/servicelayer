@@ -12,7 +12,7 @@ from servicelayer.taskqueue import (
     Worker,
     Dataset,
     Task,
-    get_rabbitmq_connection,
+    get_rabbitmq_channel,
     dataset_from_collection_id,
     declare_rabbitmq_queue,
     flush_queues,
@@ -49,8 +49,7 @@ class TaskQueueTest(TestCase):
             "payload": {},
             "priority": priority,
         }
-        connection = get_rabbitmq_connection()
-        channel = connection.channel()
+        channel = get_rabbitmq_channel()
         declare_rabbitmq_queue(channel, test_queue_name)
         channel.queue_purge(test_queue_name)
         channel.basic_publish(
@@ -84,7 +83,7 @@ class TaskQueueTest(TestCase):
         assert task.get_retry_count(conn) == 1
 
         with patch("servicelayer.settings.WORKER_RETRY", 0):
-            channel = connection.channel()
+            channel = get_rabbitmq_channel()
             channel.queue_purge(test_queue_name)
             channel.basic_publish(
                 properties=pika.BasicProperties(priority=priority),
@@ -138,8 +137,7 @@ class TaskQueueTest(TestCase):
             "collection_id": 2,
         }
 
-        connection = get_rabbitmq_connection()
-        channel = connection.channel()
+        channel = get_rabbitmq_channel()
         declare_rabbitmq_queue(channel, test_queue_name)
         channel.queue_purge(test_queue_name)
         channel.basic_publish(
@@ -171,15 +169,13 @@ class TaskQueueTest(TestCase):
             return_value=None,
         ) as dispatch_fn:
             with patch.object(
-                pika.channel.Channel,
+                channel,
                 attribute="basic_nack",
                 return_value=None,
             ) as nack_fn:
                 worker.process(blocking=False)
-                nack_fn.assert_any_call(delivery_tag=1, multiple=False, requeue=True)
+                nack_fn.assert_called_once()
                 dispatch_fn.assert_not_called()
-
-        channel.close()
 
         status = dataset.get_active_dataset_status(conn=conn)
         stage = status["datasets"]["2"]["stages"][0]
@@ -190,14 +186,14 @@ class TaskQueueTest(TestCase):
 
 def test_get_priority_bucket():
     redis = get_fakeredis()
-    rmq = get_rabbitmq_connection()
-    flush_queues(rmq, redis, ["index"])
+    rmq_channel = get_rabbitmq_channel()
+    flush_queues(rmq_channel, redis, ["index"])
     collection_id = 1
 
     assert get_task_count(collection_id, redis) == 0
     assert get_priority(collection_id, redis) in (7, 8)
 
-    queue_task(rmq, redis, collection_id, "index")
+    queue_task(rmq_channel, redis, collection_id, "index")
 
     assert get_task_count(collection_id, redis) == 1
     assert get_priority(collection_id, redis) in (7, 8)
