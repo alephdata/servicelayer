@@ -3,6 +3,7 @@ from unittest import TestCase
 from unittest.mock import patch
 import json
 from random import randrange
+import time_machine
 
 import pika
 from prometheus_client import REGISTRY
@@ -190,6 +191,127 @@ class TaskQueueTest(TestCase):
         assert stage["pending"] == 1
         assert stage["running"] == 0
         assert dataset.is_task_tracked(Task(**body))
+
+    
+def test_dataset_get_status():
+    conn = get_fakeredis()
+
+    dataset = Dataset(conn=conn, name="123")
+    status = dataset.get_status()
+
+    assert status["pending"] == 0
+    assert status["running"] == 0
+    assert status["finished"] == 0
+    assert status["start_time"] is None
+    assert status["last_update"] is None
+    assert status["end_time"] is None
+
+    task_one = Task(
+        task_id="1",
+        job_id="abc",
+        delivery_tag="",
+        operation="ingest",
+        context={},
+        payload={},
+        priority=5,
+        collection_id="1",
+    )
+
+    task_two = Task(
+        task_id="2",
+        job_id="abc",
+        delivery_tag="",
+        operation="ingest",
+        context={},
+        payload={},
+        priority=5,
+        collection_id="1",
+    )
+
+    # Adding a task updates `start_time` and `last_update`
+    with time_machine.travel("2024-01-01T00:00:00"):
+        dataset.add_task(task_one.task_id, task_one.operation)
+
+    status = dataset.get_status()
+    assert status["pending"] == 1
+    assert status["running"] == 0
+    assert status["finished"] == 0
+    assert status["start_time"].startswith("2024-01-01T00:00:00")
+    assert status["last_update"].startswith("2024-01-01T00:00:00")
+    assert status["end_time"] is None
+
+    # Once a worker starts processing a task, only `last_update` is updated
+    with time_machine.travel("2024-01-02T00:00:00"):
+        dataset.checkout_task(task_one.task_id, task_one.operation)
+
+    status = dataset.get_status()
+    assert status["pending"] == 0
+    assert status["running"] == 1
+    assert status["finished"] == 0
+    assert status["start_time"].startswith("2024-01-01T00:00:00")
+    assert status["last_update"].startswith("2024-01-02T00:00:00")
+    assert status["end_time"] is None
+
+    # When another task is added, only `last_update` is updated
+    with time_machine.travel("2024-01-03T00:00:00"):
+        dataset.add_task(task_two.task_id, task_two.operation)
+
+    status = dataset.get_status()
+    assert status["pending"] == 1
+    assert status["running"] == 1
+    assert status["finished"] == 0
+    assert status["start_time"].startswith("2024-01-01T00:00:00")
+    assert status["last_update"].startswith("2024-01-03T00:00:00")
+    assert status["end_time"] is None
+
+    # When the first task has been processed, `last_update` is updated
+    with time_machine.travel("2024-01-04T00:00:00"):
+        dataset.mark_done(task_one)
+
+    status = dataset.get_status()
+    assert status["pending"] == 1
+    assert status["running"] == 0
+    assert status["finished"] == 1
+    assert status["start_time"].startswith("2024-01-01T00:00:00")
+    assert status["last_update"].startswith("2024-01-04T00:00:00")
+    assert status["end_time"] is None
+
+    # When the worker starts processing the second task, only `last_update` is updated
+    with time_machine.travel("2024-01-05T00:00:00"):
+        dataset.checkout_task(task_two.task_id, task_two.operation)
+
+    status = dataset.get_status()
+    assert status["pending"] == 0
+    assert status["running"] == 1
+    assert status["finished"] == 1
+    assert status["start_time"].startswith("2024-01-01T00:00:00")
+    assert status["last_update"].startswith("2024-01-05T00:00:00")
+    assert status["end_time"] is None
+
+    # Once all tasks have been processed, status data is flushed
+    with time_machine.travel("2024-01-06T00:00:00"):
+        dataset.mark_done(task_two)
+
+    status = dataset.get_status()
+    assert status["pending"] == 0
+    assert status["running"] == 0
+    assert status["finished"] == 0
+    assert status["start_time"] is None
+    assert status["last_update"] is None
+    assert status["end_time"] is None
+
+    # Adding a new task to an inactive dataset sets `start_time` and
+    # resets `end_time`
+    with time_machine.travel("2024-01-07T00:00:00"):
+        dataset.add_task("3", "analyze")
+
+    status = dataset.get_status()
+    assert status["pending"] == 1
+    assert status["running"] == 0
+    assert status["finished"] == 0
+    assert status["start_time"].startswith("2024-01-07T00:00:00")
+    assert status["last_update"].startswith("2024-01-07T00:00:00")
+    assert status["end_time"] is None
 
 
 @pytest.fixture
