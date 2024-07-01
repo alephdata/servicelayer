@@ -224,6 +224,17 @@ def test_dataset_get_status():
         collection_id="1",
     )
 
+    task_three = Task(
+        task_id="3",
+        job_id="abc",
+        delivery_tag="",
+        operation="index",
+        context={},
+        payload={},
+        priority=5,
+        collection_id="1",
+    )
+
     # Adding a task updates `start_time` and `last_update`
     with time_machine.travel("2024-01-01T00:00:00"):
         dataset.add_task(task_one.task_id, task_one.operation)
@@ -292,7 +303,7 @@ def test_dataset_get_status():
 
     # Adding a new task to an inactive dataset sets `start_time`
     with time_machine.travel("2024-01-07T00:00:00"):
-        dataset.add_task("3", "analyze")
+        dataset.add_task(task_three.task_id, task_three.operation)
 
     status = dataset.get_status()
     assert status["pending"] == 1
@@ -300,6 +311,29 @@ def test_dataset_get_status():
     assert status["finished"] == 0
     assert status["start_time"].startswith("2024-01-07T00:00:00")
     assert status["last_update"].startswith("2024-01-07T00:00:00")
+
+    # Cancelling a dataset flushes status data
+    with time_machine.travel("2024-01-08T00:00:00"):
+        dataset.checkout_task(task_three.task_id, task_three.operation)
+        dataset.cancel()
+
+    status = dataset.get_status()
+    assert status["pending"] == 0
+    assert status["running"] == 0
+    assert status["finished"] == 0
+    assert status["start_time"] is None
+    assert status["last_update"] is None
+
+    # Tasks that were already running when the dataset was cancelled
+    # have no effect
+    with time_machine.travel("2024-01-09T00:00:00"):
+        dataset.mark_done(task_three)
+
+    assert status["pending"] == 0
+    assert status["running"] == 0
+    assert status["finished"] == 0
+    assert status["start_time"] is None
+    assert status["last_update"] is None
 
 
 @pytest.fixture
