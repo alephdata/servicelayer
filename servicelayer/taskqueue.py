@@ -736,6 +736,7 @@ def get_rabbitmq_channel() -> BlockingChannel:
                 )
                 local.connection = connection
                 local.channel = connection.channel()
+                local.channel.confirm_delivery()
 
             # Check that the connection is alive
             result = local.channel.exchange_declare(
@@ -826,7 +827,6 @@ def queue_task(
         "priority": priority,
     }
     try:
-        rmq_channel.confirm_delivery()
         rmq_channel.basic_publish(
             exchange="",
             routing_key=stage,
