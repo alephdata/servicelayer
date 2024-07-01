@@ -192,6 +192,7 @@ class TaskQueueTest(TestCase):
 
 def test_dataset_get_status():
     conn = get_fakeredis()
+    conn.flushdb()
 
     dataset = Dataset(conn=conn, name="123")
     status = dataset.get_status()
@@ -334,6 +335,52 @@ def test_dataset_get_status():
     assert status["finished"] == 0
     assert status["start_time"] is None
     assert status["last_update"] is None
+
+
+def test_dataset_cancel():
+    conn = get_fakeredis()
+    conn.flushdb()
+
+    dataset = Dataset(conn=conn, name="abc")
+    assert conn.keys() == []
+
+    # Enqueueing tasks stores status data in Redis
+    dataset.add_task("1", "ingest")
+    dataset.add_task("2", "index")
+    dataset.checkout_task("1", "ingest")
+    assert conn.keys() != []
+
+    # Cancelling a dataset removes associated data from Redis
+    dataset.cancel()
+    assert conn.keys() == []
+
+
+def test_dataset_mark_done():
+    conn = get_fakeredis()
+    conn.flushdb()
+
+    dataset = Dataset(conn=conn, name="abc")
+    assert conn.keys() == []
+
+    task = Task(
+        task_id="1",
+        job_id="abc",
+        delivery_tag="",
+        operation="ingest",
+        context={},
+        payload={},
+        priority=5,
+        collection_id="abc",
+    )
+
+    # Enqueueing a task stores status data in Redis
+    dataset.add_task(task.task_id, task.operation)
+    dataset.checkout_task(task.task_id, task.operation)
+    assert conn.keys() != []
+
+    # Marking the last task as done cleans up status data in Redis
+    dataset.mark_done(task)
+    assert conn.keys() == []
 
 
 @pytest.fixture
