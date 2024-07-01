@@ -66,7 +66,6 @@ class TaskQueueTest(TestCase):
         assert status["finished"] == 0, status
         assert status["pending"] == 1, status
         assert status["running"] == 0, status
-        assert status["end_time"] is None
         started = unpack_datetime(status["start_time"])
         last_updated = unpack_datetime(status["last_update"])
         assert started < last_updated
@@ -116,8 +115,7 @@ class TaskQueueTest(TestCase):
         assert status["running"] == 0, status
         started = unpack_datetime(status["start_time"])
         last_updated = unpack_datetime(status["last_update"])
-        end_time = unpack_datetime(status["end_time"])
-        assert started < end_time < last_updated
+        assert started < last_updated
 
     @patch("servicelayer.taskqueue.Dataset.should_execute")
     def test_task_that_shouldnt_execute(self, mock_should_execute):
@@ -184,7 +182,7 @@ class TaskQueueTest(TestCase):
         assert stage["running"] == 0
         assert dataset.is_task_tracked(Task(**body))
 
-    
+
 def test_dataset_get_status():
     conn = get_fakeredis()
 
@@ -196,7 +194,6 @@ def test_dataset_get_status():
     assert status["finished"] == 0
     assert status["start_time"] is None
     assert status["last_update"] is None
-    assert status["end_time"] is None
 
     task_one = Task(
         task_id="1",
@@ -230,7 +227,6 @@ def test_dataset_get_status():
     assert status["finished"] == 0
     assert status["start_time"].startswith("2024-01-01T00:00:00")
     assert status["last_update"].startswith("2024-01-01T00:00:00")
-    assert status["end_time"] is None
 
     # Once a worker starts processing a task, only `last_update` is updated
     with time_machine.travel("2024-01-02T00:00:00"):
@@ -242,7 +238,6 @@ def test_dataset_get_status():
     assert status["finished"] == 0
     assert status["start_time"].startswith("2024-01-01T00:00:00")
     assert status["last_update"].startswith("2024-01-02T00:00:00")
-    assert status["end_time"] is None
 
     # When another task is added, only `last_update` is updated
     with time_machine.travel("2024-01-03T00:00:00"):
@@ -254,7 +249,6 @@ def test_dataset_get_status():
     assert status["finished"] == 0
     assert status["start_time"].startswith("2024-01-01T00:00:00")
     assert status["last_update"].startswith("2024-01-03T00:00:00")
-    assert status["end_time"] is None
 
     # When the first task has been processed, `last_update` is updated
     with time_machine.travel("2024-01-04T00:00:00"):
@@ -266,7 +260,6 @@ def test_dataset_get_status():
     assert status["finished"] == 1
     assert status["start_time"].startswith("2024-01-01T00:00:00")
     assert status["last_update"].startswith("2024-01-04T00:00:00")
-    assert status["end_time"] is None
 
     # When the worker starts processing the second task, only `last_update` is updated
     with time_machine.travel("2024-01-05T00:00:00"):
@@ -278,7 +271,6 @@ def test_dataset_get_status():
     assert status["finished"] == 1
     assert status["start_time"].startswith("2024-01-01T00:00:00")
     assert status["last_update"].startswith("2024-01-05T00:00:00")
-    assert status["end_time"] is None
 
     # Once all tasks have been processed, status data is flushed
     with time_machine.travel("2024-01-06T00:00:00"):
@@ -290,10 +282,8 @@ def test_dataset_get_status():
     assert status["finished"] == 0
     assert status["start_time"] is None
     assert status["last_update"] is None
-    assert status["end_time"] is None
 
-    # Adding a new task to an inactive dataset sets `start_time` and
-    # resets `end_time`
+    # Adding a new task to an inactive dataset sets `start_time`
     with time_machine.travel("2024-01-07T00:00:00"):
         dataset.add_task("3", "analyze")
 
@@ -303,7 +293,6 @@ def test_dataset_get_status():
     assert status["finished"] == 0
     assert status["start_time"].startswith("2024-01-07T00:00:00")
     assert status["last_update"].startswith("2024-01-07T00:00:00")
-    assert status["end_time"] is None
 
 
 def test_get_priority_bucket():
@@ -342,7 +331,6 @@ def test_get_priority_bucket():
                         }
                     ],
                     "start_time": "2024-06-25T10:58:49.779811",
-                    "end_time": None,
                     "last_update": "2024-06-25T10:58:49.779819",
                 }
             },
@@ -371,7 +359,6 @@ def test_get_priority_bucket():
                         }
                     ],
                     "start_time": "2024-06-25T10:58:49.779811",
-                    "end_time": None,
                     "last_update": "2024-06-25T10:58:49.779819",
                 }
             },
