@@ -293,10 +293,14 @@ class Dataset:
 
         status = self.get_status()
         if status["running"] == 0 and status["pending"] == 0:
+            pipe = self.conn.pipeline()
             # remove the dataset from active datasets
             pipe.srem(self.key, self.name)
             # reset finished task count
             pipe.delete(self.finished_key)
+            # reset time stamps
+            pipe.delete(self.start_key)
+            pipe.delete(self.last_update_key)
             # delete information about running stages
             for stage in self.conn.smembers(self.active_stages_key):
                 stage_key = self.get_stage_key(stage)
@@ -306,6 +310,7 @@ class Dataset:
                 pipe.delete(make_key(stage_key, "finished"))
             # delete stages key
             pipe.delete(self.active_stages_key)
+            pipe.execute()
 
             pipe.execute()
 
