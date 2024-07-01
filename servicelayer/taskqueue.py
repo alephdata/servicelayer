@@ -83,7 +83,6 @@ class Dataset:
         self.running_key = make_key(PREFIX, "qdj", name, "running")
         self.pending_key = make_key(PREFIX, "qdj", name, "pending")
         self.start_key = make_key(PREFIX, "qdj", name, "start")
-        self.end_key = make_key(PREFIX, "qdj", name, "end")
         self.last_update_key = make_key(PREFIX, "qdj", name, "last_update")
         self.active_stages_key = make_key(PREFIX, "qds", name, "active_stages")
 
@@ -97,7 +96,6 @@ class Dataset:
         pipe.delete(self.running_key)
         pipe.delete(self.pending_key)
         pipe.delete(self.start_key)
-        pipe.delete(self.end_key)
         pipe.delete(self.last_update_key)
         for stage in self.conn.smembers(self.active_stages_key):
             stage_key = self.get_stage_key(stage)
@@ -112,11 +110,8 @@ class Dataset:
         """Status of a given dataset."""
         status = {"finished": 0, "running": 0, "pending": 0, "stages": []}
 
-        start, end, last_update = self.conn.mget(
-            (self.start_key, self.end_key, self.last_update_key)
-        )
+        start, last_update = self.conn.mget((self.start_key, self.last_update_key))
         status["start_time"] = start
-        status["end_time"] = end
         status["last_update"] = last_update
 
         for stage in self.conn.smembers(self.active_stages_key):
@@ -226,7 +221,6 @@ class Dataset:
         pipe.sadd(self.pending_key, task_id)
         pipe.set(self.start_key, pack_now())
         pipe.set(self.last_update_key, pack_now())
-        pipe.delete(self.end_key)
         pipe.execute()
 
     def remove_task(self, task_id, stage):
@@ -277,7 +271,6 @@ class Dataset:
         pipe.sadd(self.running_key, task_id)
         pipe.set(self.start_key, pack_now())
         pipe.set(self.last_update_key, pack_now())
-        pipe.delete(self.end_key)
         pipe.execute()
 
     def mark_done(self, task: Task):
@@ -295,7 +288,6 @@ class Dataset:
         pipe.srem(make_key(stage_key, "running"), task.task_id)
         pipe.incr(make_key(stage_key, "finished"))
 
-        pipe.set(self.end_key, pack_now())
         pipe.set(self.last_update_key, pack_now())
         pipe.execute()
 
