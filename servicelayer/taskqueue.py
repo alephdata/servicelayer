@@ -219,7 +219,7 @@ class Dataset:
         pipe.sadd(make_key(stage_key, "pending"), task_id)
 
         pipe.sadd(self.pending_key, task_id)
-        pipe.set(self.start_key, pack_now())
+        pipe.set(self.start_key, pack_now(), nx=True)
         pipe.set(self.last_update_key, pack_now())
         pipe.execute()
 
@@ -269,7 +269,7 @@ class Dataset:
 
         pipe.srem(self.pending_key, task_id)
         pipe.sadd(self.running_key, task_id)
-        pipe.set(self.start_key, pack_now())
+        pipe.set(self.start_key, pack_now(), nx=True)
         pipe.set(self.last_update_key, pack_now())
         pipe.execute()
 
