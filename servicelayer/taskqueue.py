@@ -83,40 +83,23 @@ class Dataset:
         self.running_key = make_key(PREFIX, "qdj", name, "running")
         self.pending_key = make_key(PREFIX, "qdj", name, "pending")
         self.start_key = make_key(PREFIX, "qdj", name, "start")
-        self.end_key = make_key(PREFIX, "qdj", name, "end")
         self.last_update_key = make_key(PREFIX, "qdj", name, "last_update")
         self.active_stages_key = make_key(PREFIX, "qds", name, "active_stages")
 
     def cancel(self):
         """Cancel processing of all tasks belonging to a dataset"""
         pipe = self.conn.pipeline()
-        # remove the dataset from active datasets
-        pipe.srem(self.key, self.name)
-        # clean up tasks and task counts
-        pipe.delete(self.finished_key)
         pipe.delete(self.running_key)
         pipe.delete(self.pending_key)
-        pipe.delete(self.start_key)
-        pipe.delete(self.end_key)
-        pipe.delete(self.last_update_key)
-        for stage in self.conn.smembers(self.active_stages_key):
-            stage_key = self.get_stage_key(stage)
-            pipe.delete(stage_key)
-            pipe.delete(make_key(stage_key, "pending"))
-            pipe.delete(make_key(stage_key, "running"))
-            pipe.delete(make_key(stage_key, "finished"))
-        pipe.delete(self.active_stages_key)
+        self.flush_status(pipe)
         pipe.execute()
 
     def get_status(self):
         """Status of a given dataset."""
         status = {"finished": 0, "running": 0, "pending": 0, "stages": []}
 
-        start, end, last_update = self.conn.mget(
-            (self.start_key, self.end_key, self.last_update_key)
-        )
+        start, last_update = self.conn.mget((self.start_key, self.last_update_key))
         status["start_time"] = start
-        status["end_time"] = end
         status["last_update"] = last_update
 
         for stage in self.conn.smembers(self.active_stages_key):
@@ -224,9 +207,8 @@ class Dataset:
         pipe.sadd(make_key(stage_key, "pending"), task_id)
 
         pipe.sadd(self.pending_key, task_id)
-        pipe.set(self.start_key, pack_now())
+        pipe.set(self.start_key, pack_now(), nx=True)
         pipe.set(self.last_update_key, pack_now())
-        pipe.delete(self.end_key)
         pipe.execute()
 
     def remove_task(self, task_id, stage):
@@ -241,23 +223,14 @@ class Dataset:
 
         pipe.delete(make_key(PREFIX, "qdj", self.name, "taskretry", task_id))
 
-        status = self.get_status()
-        if status["running"] == 0 and status["pending"] == 0:
-            # remove the dataset from active datasets
-            pipe.srem(self.key, self.name)
-            # reset finished task count
-            pipe.delete(self.finished_key)
-            # delete information about running stages
-            for stage in self.conn.smembers(self.active_stages_key):
-                stage_key = self.get_stage_key(stage)
-                pipe.delete(stage_key)
-                pipe.delete(make_key(stage_key, "pending"))
-                pipe.delete(make_key(stage_key, "running"))
-                pipe.delete(make_key(stage_key, "finished"))
-            # delete stages key
-            pipe.delete(self.active_stages_key)
         pipe.set(self.last_update_key, pack_now())
         pipe.execute()
+
+        status = self.get_status()
+        if status["running"] == 0 and status["pending"] == 0:
+            pipe = self.conn.pipeline()
+            self.flush_status(pipe)
+            pipe.execute()
 
     def checkout_task(self, task_id, stage):
         """Update state when a task is checked out for execution"""
@@ -275,9 +248,8 @@ class Dataset:
 
         pipe.srem(self.pending_key, task_id)
         pipe.sadd(self.running_key, task_id)
-        pipe.set(self.start_key, pack_now())
+        pipe.set(self.start_key, pack_now(), nx=True)
         pipe.set(self.last_update_key, pack_now())
-        pipe.delete(self.end_key)
         pipe.execute()
 
     def mark_done(self, task: Task):
@@ -295,24 +267,14 @@ class Dataset:
         pipe.srem(make_key(stage_key, "running"), task.task_id)
         pipe.incr(make_key(stage_key, "finished"))
 
-        pipe.set(self.end_key, pack_now())
         pipe.set(self.last_update_key, pack_now())
         pipe.execute()
+
         status = self.get_status()
         if status["running"] == 0 and status["pending"] == 0:
-            # remove the dataset from active datasets
-            self.conn.srem(self.key, self.name)
-            # reset finished task count
-            pipe.delete(self.finished_key)
-            # delete information about running stages
-            for stage in self.conn.smembers(self.active_stages_key):
-                stage_key = self.get_stage_key(stage)
-                pipe.delete(stage_key)
-                pipe.delete(make_key(stage_key, "pending"))
-                pipe.delete(make_key(stage_key, "running"))
-                pipe.delete(make_key(stage_key, "finished"))
-            # delete stages key
-            pipe.delete(self.active_stages_key)
+            pipe = self.conn.pipeline()
+            self.flush_status(pipe)
+            pipe.execute()
 
     def mark_for_retry(self, task):
         pipe = self.conn.pipeline()
@@ -359,6 +321,29 @@ class Dataset:
             tracked = False
 
         return tracked
+
+    def flush_status(self, pipe):
+        """Flush status data such as timestamps and task counts"""
+        # remove the dataset from active datasets
+        self.conn.srem(self.key, self.name)
+
+        # reset finished task count
+        pipe.delete(self.finished_key)
+
+        # reset timestamps
+        pipe.delete(self.start_key)
+        pipe.delete(self.last_update_key)
+
+        # delete information about running stages
+        for stage in self.conn.smembers(self.active_stages_key):
+            stage_key = self.get_stage_key(stage)
+            pipe.delete(stage_key)
+            pipe.delete(make_key(stage_key, "pending"))
+            pipe.delete(make_key(stage_key, "running"))
+            pipe.delete(make_key(stage_key, "finished"))
+
+        # delete stages key
+        pipe.delete(self.active_stages_key)
 
     @classmethod
     def is_low_prio(cls, conn, collection_id):
