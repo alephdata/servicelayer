@@ -317,7 +317,6 @@ class Dataset:
 
             pipe.execute()
 
-
     def mark_for_retry(self, task):
         pipe = self.conn.pipeline()
         stage_key = self.get_stage_key(task.operation)
