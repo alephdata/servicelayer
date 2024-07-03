@@ -298,6 +298,7 @@ class Dataset:
         pipe.set(self.end_key, pack_now())
         pipe.set(self.last_update_key, pack_now())
         pipe.execute()
+
         status = self.get_status()
         if status["running"] == 0 and status["pending"] == 0:
             # remove the dataset from active datasets
@@ -313,6 +314,9 @@ class Dataset:
                 pipe.delete(make_key(stage_key, "finished"))
             # delete stages key
             pipe.delete(self.active_stages_key)
+
+            pipe.execute()
+
 
     def mark_for_retry(self, task):
         pipe = self.conn.pipeline()
