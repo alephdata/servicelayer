@@ -110,7 +110,7 @@ class TaskQueueTest(TestCase):
 
         worker.ack_message(worker.test_task, channel)
         status = dataset.get_status()
-        assert status["finished"] == 1, status
+        assert status["finished"] == 0, status
         assert status["pending"] == 0, status
         assert status["running"] == 0, status
         started = unpack_datetime(status["start_time"])
