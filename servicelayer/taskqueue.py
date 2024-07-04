@@ -666,9 +666,10 @@ class Worker(ABC):
         log.info(f"NACKing message {task.delivery_tag} for task_id {task.task_id}")
         dataset = task.get_dataset(conn=self.conn)
         # Sync state to redis
-        if not dataset.is_task_tracked(task):
-            dataset.add_task(task.task_id, task.operation)
-        dataset.mark_for_retry(task)
+        if requeue:
+            if not dataset.is_task_tracked(task):
+                dataset.add_task(task.task_id, task.operation)
+            dataset.mark_for_retry(task)
         if channel.is_open:
             channel.basic_nack(delivery_tag=task.delivery_tag, requeue=requeue)
         clear_contextvars()
