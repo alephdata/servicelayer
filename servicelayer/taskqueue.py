@@ -558,19 +558,14 @@ class Worker(ABC):
         Returns a tuple of (success, retry)."""
         success = True
         retry = True
+
+        task_retry_count = task.get_retry_count(self.conn)
+
         try:
             dataset = Dataset(
                 conn=self.conn, name=dataset_from_collection_id(task.collection_id)
             )
             if dataset.should_execute(task.task_id):
-                task_retry_count = task.get_retry_count(self.conn)
-                if task_retry_count:
-                    metrics.TASKS_FAILED.labels(
-                        stage=task.operation,
-                        retries=task_retry_count,
-                        failed_permanently=False,
-                    ).inc()
-
                 if task_retry_count > settings.WORKER_RETRY:
                     raise MaxRetriesExceededError(
                         f"Max retries reached for task {task.task_id}. Aborting."
@@ -604,11 +599,6 @@ class Worker(ABC):
                 # In this case, a task ID was found neither in the
                 # list of Pending, nor the list of Running tasks
                 # in Redis. It was never attempted.
-                metrics.TASKS_FAILED.labels(
-                    stage=task.operation,
-                    retries=0,
-                    failed_permanently=True,
-                ).inc()
                 success = False
         except MaxRetriesExceededError:
             log.exception(
@@ -618,6 +608,11 @@ class Worker(ABC):
             retry = False
         except Exception:
             log.exception("Error in task handling")
+            metrics.TASKS_FAILED.labels(
+                stage=task.operation,
+                retries=task_retry_count,
+                failed_permanently=task_retry_count >= settings.WORKER_RETRY,
+            ).inc()
             success = False
         finally:
             self.after_task(task)
