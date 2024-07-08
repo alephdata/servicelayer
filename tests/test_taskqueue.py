@@ -5,6 +5,9 @@ import json
 from random import randrange
 
 import pika
+from prometheus_client import REGISTRY
+from prometheus_client.metrics import MetricWrapperBase
+import pytest
 
 from servicelayer import settings
 from servicelayer.cache import get_fakeredis
@@ -30,6 +33,11 @@ class CountingWorker(Worker):
         self.test_done += 1
         self.test_task = task
         return task
+
+
+class FailingWorker(Worker):
+    def dispatch_task(self, task: Task) -> Task:
+        raise Exception("Woops")
 
 
 class TaskQueueTest(TestCase):
@@ -182,6 +190,103 @@ class TaskQueueTest(TestCase):
         assert stage["pending"] == 1
         assert stage["running"] == 0
         assert dataset.is_task_tracked(Task(**body))
+
+
+@pytest.fixture
+def prom_registry():
+    # This relies on internal implementation details of the client to reset
+    # previously collected metrics before every test execution. Unfortunately,
+    # there is no clean way of achieving the same thing that doesn't add a lot
+    # of complexity to the test and application code.
+    collectors = REGISTRY._collector_to_names.keys()
+    for collector in collectors:
+        if isinstance(collector, MetricWrapperBase):
+            collector._metrics.clear()
+            collector._metric_init()
+
+    yield REGISTRY
+
+
+def test_prometheus_metrics_succeeded(prom_registry):
+    conn = get_fakeredis()
+    rmq_channel = get_rabbitmq_channel()
+    worker = CountingWorker(conn=conn, queues=["ingest"], num_threads=1)
+    declare_rabbitmq_queue(channel=rmq_channel, queue="ingest")
+
+    queue_task(
+        rmq_channel=rmq_channel,
+        redis_conn=conn,
+        collection_id=123,
+        stage="ingest",
+    )
+    worker.process(blocking=False)
+
+    started = prom_registry.get_sample_value(
+        "servicelayer_tasks_started_total",
+        {"stage": "ingest"},
+    )
+    assert started == 1
+
+    succeeded = prom_registry.get_sample_value(
+        "servicelayer_tasks_succeeded_total",
+        {"stage": "ingest", "retries": "0"},
+    )
+    assert succeeded == 1
+
+    # Under the hood, histogram metrics create multiple time series tracking
+    # the number and sum of observations, as well as individual histogram buckets.
+    duration_sum = prom_registry.get_sample_value(
+        "servicelayer_task_duration_seconds_sum",
+        {"stage": "ingest"},
+    )
+    duration_count = prom_registry.get_sample_value(
+        "servicelayer_task_duration_seconds_count",
+        {"stage": "ingest"},
+    )
+    assert duration_sum > 0
+    assert duration_count == 1
+
+
+def test_prometheus_metrics_failed(prom_registry):
+    conn = get_fakeredis()
+    rmq_channel = get_rabbitmq_channel()
+    worker = FailingWorker(conn=conn, queues=["ingest"], num_threads=1)
+    declare_rabbitmq_queue(channel=rmq_channel, queue="ingest")
+
+    queue_task(
+        rmq_channel=rmq_channel,
+        redis_conn=conn,
+        collection_id=123,
+        stage="ingest",
+    )
+    worker.process(blocking=False)
+
+    started = prom_registry.get_sample_value(
+        "servicelayer_tasks_started_total",
+        {"stage": "ingest"},
+    )
+    assert settings.WORKER_RETRY == 3
+    assert started == 4  # Initial attempt + 3 retries
+
+    first_attempt = REGISTRY.get_sample_value(
+        "servicelayer_tasks_failed_total",
+        {
+            "stage": "ingest",
+            "retries": "0",
+            "failed_permanently": "False",
+        },
+    )
+    assert first_attempt == 1
+
+    last_attempt = REGISTRY.get_sample_value(
+        "servicelayer_tasks_failed_total",
+        {
+            "stage": "ingest",
+            "retries": "3",
+            "failed_permanently": "True",
+        },
+    )
+    assert last_attempt == 1
 
 
 def test_get_priority_bucket():
