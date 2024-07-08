@@ -302,7 +302,7 @@ class Dataset:
         status = self.get_status()
         if status["running"] == 0 and status["pending"] == 0:
             # remove the dataset from active datasets
-            self.conn.srem(self.key, self.name)
+            pipe.srem(self.key, self.name)
             # reset finished task count
             pipe.delete(self.finished_key)
             # delete information about running stages
@@ -665,6 +665,8 @@ class Worker(ABC):
             if not dataset.is_task_tracked(task):
                 dataset.add_task(task.task_id, task.operation)
             dataset.mark_for_retry(task)
+        else:
+            dataset.mark_done(task)
         if channel.is_open:
             channel.basic_nack(delivery_tag=task.delivery_tag, requeue=requeue)
         clear_contextvars()
