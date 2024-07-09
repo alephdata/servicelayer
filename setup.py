@@ -6,7 +6,7 @@ with open("README.md") as f:
 
 setup(
     name="servicelayer",
-    version="1.23.0-rc31",
+    version="1.23.0-rc32",
     description="Basic remote service functions for alephdata components",
     classifiers=[
         "Development Status :: 3 - Alpha",
