@@ -211,27 +211,6 @@ class Dataset:
         pipe.set(self.last_update_key, pack_now())
         pipe.execute()
 
-    def remove_task(self, task_id, stage):
-        """Remove a task that's not going to be executed"""
-        log.info(f"Removing task: {task_id}")
-        pipe = self.conn.pipeline()
-        pipe.srem(self.pending_key, task_id)
-
-        stage_key = self.get_stage_key(stage)
-        pipe.srem(stage_key, task_id)
-        pipe.srem(make_key(stage_key, "pending"), task_id)
-
-        pipe.delete(make_key(PREFIX, "qdj", self.name, "taskretry", task_id))
-
-        pipe.set(self.last_update_key, pack_now())
-        pipe.execute()
-
-        status = self.get_status()
-        if status["running"] == 0 and status["pending"] == 0:
-            pipe = self.conn.pipeline()
-            self.flush_status(pipe)
-            pipe.execute()
-
     def checkout_task(self, task_id, stage):
         """Update state when a task is checked out for execution"""
         log.info(f"Checking out task: {task_id}")
