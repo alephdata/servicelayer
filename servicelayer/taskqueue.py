@@ -100,11 +100,19 @@ class Dataset:
         pipe.delete(self.end_key)
         pipe.delete(self.last_update_key)
         for stage in self.conn.smembers(self.active_stages_key):
+            # TODO - delete this block after all wrong keys are gone
             stage_key = self.get_stage_key(stage)
             pipe.delete(stage_key)
             pipe.delete(make_key(stage_key, "pending"))
             pipe.delete(make_key(stage_key, "running"))
             pipe.delete(make_key(stage_key, "finished"))
+
+            # TODO - correct
+            pipe.delete(make_key(PREFIX, "qds", self.name, stage))
+            pipe.delete(make_key(PREFIX, "qds", self.name, stage, "pending"))
+            pipe.delete(make_key(PREFIX, "qds", self.name, stage, "running"))
+            pipe.delete(make_key(PREFIX, "qds", self.name, stage, "finished"))
+
         pipe.delete(self.active_stages_key)
         pipe.execute()
 
@@ -121,19 +129,42 @@ class Dataset:
 
         for stage in self.conn.smembers(self.active_stages_key):
             stage_key = self.get_stage_key(stage)
+
+            # TODO - uncomment this after all wrong keys are gone
+            # num_pending = unpack_int(
+            #     self.conn.scard(make_key(PREFIX, "qds", self.name, stage, "pending"))
+            # )
+            # num_running = unpack_int(
+            #     self.conn.scard(make_key(PREFIX, "qds", self.name, stage, "running"))
+            # )
+            # num_finished = unpack_int(
+            #     self.conn.get(make_key(PREFIX, "qds", self.name, stage, "finished"))
+            # )
+
+            # TODO - temporary hack
+            num_pending = unpack_int(
+                self.conn.scard(make_key(stage_key, "pending"))
+            ) + unpack_int(
+                self.conn.scard(make_key(PREFIX, "qds", self.name, stage, "pending"))
+            )
+            num_running = unpack_int(
+                self.conn.scard(make_key(stage_key, "running"))
+            ) + unpack_int(
+                self.conn.scard(make_key(PREFIX, "qds", self.name, stage, "running"))
+            )
+            num_finished = unpack_int(
+                self.conn.get(make_key(stage_key, "finished"))
+            ) + unpack_int(
+                self.conn.get(make_key(PREFIX, "qds", self.name, stage, "finished"))
+            )
+
             status["stages"].append(
                 {
                     "job_id": "",
                     "stage": stage,
-                    "pending": max(
-                        0, unpack_int(self.conn.scard(make_key(stage_key, "pending")))
-                    ),
-                    "running": max(
-                        0, unpack_int(self.conn.scard(make_key(stage_key, "running")))
-                    ),
-                    "finished": max(
-                        0, unpack_int(self.conn.get(make_key(stage_key, "finished")))
-                    ),
+                    "pending": max(0, num_pending),
+                    "running": max(0, num_running),
+                    "finished": max(0, num_finished),
                 }
             )
 
@@ -176,11 +207,20 @@ class Dataset:
                 pipe.delete(dataset.finished_key)
                 # delete information about running stages
                 for stage in dataset.conn.smembers(dataset.active_stages_key):
+                    # TODO - delete this block after all wrong keys are gone
                     stage_key = dataset.get_stage_key(stage)
                     pipe.delete(stage_key)
                     pipe.delete(make_key(stage_key, "pending"))
                     pipe.delete(make_key(stage_key, "running"))
                     pipe.delete(make_key(stage_key, "finished"))
+
+                    # TODO - correct
+                    pipe.delete(make_key(PREFIX, "qds", dataset.name, stage))
+                    pipe.delete(make_key(PREFIX, "qds", dataset.name, stage, "pending"))
+                    pipe.delete(make_key(PREFIX, "qds", dataset.name, stage, "running"))
+                    pipe.delete(
+                        make_key(PREFIX, "qds", dataset.name, stage, "finished")
+                    )
                 # delete stages key
                 pipe.delete(dataset.active_stages_key)
                 pipe.set(dataset.last_update_key, pack_now())
@@ -218,10 +258,9 @@ class Dataset:
         pipe.sadd(self.key, self.name)
 
         # update status of stages per dataset
-        stage_key = self.get_stage_key(stage)
         pipe.sadd(self.active_stages_key, stage)
-        pipe.sadd(stage_key, task_id)
-        pipe.sadd(make_key(stage_key, "pending"), task_id)
+        pipe.sadd(make_key(PREFIX, "qds", self.name, stage), task_id)
+        pipe.sadd(make_key(PREFIX, "qds", self.name, stage, "pending"), task_id)
 
         pipe.sadd(self.pending_key, task_id)
         pipe.set(self.start_key, pack_now())
@@ -235,8 +274,13 @@ class Dataset:
         pipe = self.conn.pipeline()
         pipe.srem(self.pending_key, task_id)
 
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage), task_id)
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage, "pending"), task_id)
+
+        # TODO - remove this after there are no wrong keys left
+        # It's fine if this si executed, because an inexistent key is
+        # treated as an empty set and SREM works fine.
         stage_key = self.get_stage_key(stage)
-        pipe.srem(stage_key, task_id)
         pipe.srem(make_key(stage_key, "pending"), task_id)
 
         pipe.delete(make_key(PREFIX, "qdj", self.name, "taskretry", task_id))
@@ -249,11 +293,18 @@ class Dataset:
             pipe.delete(self.finished_key)
             # delete information about running stages
             for stage in self.conn.smembers(self.active_stages_key):
+                # TODO - delete this block after all wrong keys are gone
                 stage_key = self.get_stage_key(stage)
                 pipe.delete(stage_key)
                 pipe.delete(make_key(stage_key, "pending"))
                 pipe.delete(make_key(stage_key, "running"))
                 pipe.delete(make_key(stage_key, "finished"))
+
+                # TODO - correct
+                pipe.delete(make_key(PREFIX, "qds", self.name, stage))
+                pipe.delete(make_key(PREFIX, "qds", self.name, stage, "pending"))
+                pipe.delete(make_key(PREFIX, "qds", self.name, stage, "running"))
+                pipe.delete(make_key(PREFIX, "qds", self.name, stage, "finished"))
             # delete stages key
             pipe.delete(self.active_stages_key)
         pipe.set(self.last_update_key, pack_now())
@@ -267,11 +318,14 @@ class Dataset:
         pipe.sadd(self.key, self.name)
 
         # update status of stages per dataset
-        stage_key = self.get_stage_key(stage)
         pipe.sadd(self.active_stages_key, stage)
-        pipe.sadd(stage_key, task_id)
+        pipe.sadd(make_key(PREFIX, "qds", self.name, stage), task_id)
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage, "pending"), task_id)
+        pipe.sadd(make_key(PREFIX, "qds", self.name, stage, "running"), task_id)
+
+        # TODO - remove after all the wrong keys are gone
+        stage_key = self.get_stage_key(stage)
         pipe.srem(make_key(stage_key, "pending"), task_id)
-        pipe.sadd(make_key(stage_key, "running"), task_id)
 
         pipe.srem(self.pending_key, task_id)
         pipe.sadd(self.running_key, task_id)
@@ -289,10 +343,18 @@ class Dataset:
         pipe.incr(self.finished_key)
         pipe.delete(task.retry_key)
 
-        stage_key = self.get_stage_key(task.operation)
-        pipe.srem(stage_key, task.task_id)
-        pipe.srem(make_key(stage_key, "pending"), task.task_id)
-        pipe.srem(make_key(stage_key, "running"), task.task_id)
+        stage = task.operation
+        task_id = task.task_id
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage), task_id)
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage, "pending"), task_id)
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage, "running"), task_id)
+        pipe.incr(make_key(PREFIX, "qds", self.name, stage, "finished"))
+
+        # TODO - remove this after all the wrong keys are gone
+        stage_key = self.get_stage_key(stage)
+        pipe.srem(stage_key, task_id)
+        pipe.srem(make_key(stage_key, "pending"), task_id)
+        pipe.srem(make_key(stage_key, "running"), task_id)
         pipe.incr(make_key(stage_key, "finished"))
 
         pipe.set(self.end_key, pack_now())
@@ -307,11 +369,18 @@ class Dataset:
             pipe.delete(self.finished_key)
             # delete information about running stages
             for stage in self.conn.smembers(self.active_stages_key):
+                # TODO - delete this block after all wrong keys are gone
                 stage_key = self.get_stage_key(stage)
                 pipe.delete(stage_key)
                 pipe.delete(make_key(stage_key, "pending"))
                 pipe.delete(make_key(stage_key, "running"))
                 pipe.delete(make_key(stage_key, "finished"))
+
+                # TODO - correct
+                pipe.delete(make_key(PREFIX, "qds", self.name, stage))
+                pipe.delete(make_key(PREFIX, "qds", self.name, stage, "pending"))
+                pipe.delete(make_key(PREFIX, "qds", self.name, stage, "running"))
+                pipe.delete(make_key(PREFIX, "qds", self.name, stage, "finished"))
             # delete stages key
             pipe.delete(self.active_stages_key)
 
@@ -319,15 +388,22 @@ class Dataset:
 
     def mark_for_retry(self, task):
         pipe = self.conn.pipeline()
-        stage_key = self.get_stage_key(task.operation)
 
         log.info(
             f"Marking task {task.task_id} (stage {task.operation})"
             f" for retry after NACK"
         )
 
-        pipe.srem(make_key(stage_key, "running"), task.task_id)
+        stage = task.operation
+        task_id = task.task_id
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage, "running"), task_id)
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage), task_id)
+        pipe.srem(self.running_key, task_id)
         pipe.delete(task.retry_key)
+
+        # TODO - remove when there are no wrong tasks left
+        stage_key = self.get_stage_key(task.operation)
+        pipe.srem(make_key(stage_key, "running"), task.task_id)
         pipe.srem(stage_key, task.task_id)
 
         pipe.set(self.last_update_key, pack_now())
@@ -339,14 +415,14 @@ class Dataset:
     def __str__(self):
         return self.name
 
+    # TODO - remove this after all the wrong keys are gone
     def get_stage_key(self, stage):
         return make_key(PREFIX, "qds", self.name, stage)
 
     def is_task_tracked(self, task: Task):
         tracked = True
 
-        stage_key = self.get_stage_key(task.operation)
-        dataset = dataset = dataset_from_collection_id(task.collection_id)
+        dataset = dataset_from_collection_id(task.collection_id)
         task_id = task.task_id
         stage = task.operation
 
@@ -358,7 +434,9 @@ class Dataset:
         elif stage not in self.conn.smembers(self.active_stages_key):
             tracked = False
         # and the task_id is in the list of task_ids per stage
-        elif task_id not in self.conn.smembers(stage_key):
+        elif task_id not in self.conn.smembers(
+            make_key(PREFIX, "qds", self.name, stage)
+        ):
             tracked = False
 
         return tracked
