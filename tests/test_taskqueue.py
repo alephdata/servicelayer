@@ -3,6 +3,7 @@ from unittest import TestCase
 from unittest.mock import patch
 import json
 from random import randrange
+import time_machine
 
 import pika
 from prometheus_client import REGISTRY
@@ -73,7 +74,6 @@ class TaskQueueTest(TestCase):
         assert status["finished"] == 0, status
         assert status["pending"] == 1, status
         assert status["running"] == 0, status
-        assert status["end_time"] is None
         started = unpack_datetime(status["start_time"])
         last_updated = unpack_datetime(status["last_update"])
         assert started < last_updated
@@ -121,10 +121,8 @@ class TaskQueueTest(TestCase):
         assert status["finished"] == 0, status
         assert status["pending"] == 0, status
         assert status["running"] == 0, status
-        # started = unpack_datetime(status["start_time"])
-        # last_updated = unpack_datetime(status["last_update"])
-        # end_time = unpack_datetime(status["end_time"])
-        # assert started < end_time < last_updated
+        assert status["start_time"] is None
+        assert status["last_update"] is None
 
     @patch("servicelayer.taskqueue.Dataset.should_execute")
     def test_task_that_shouldnt_execute(self, mock_should_execute):
@@ -190,6 +188,199 @@ class TaskQueueTest(TestCase):
         assert stage["pending"] == 1
         assert stage["running"] == 0
         assert dataset.is_task_tracked(Task(**body))
+
+
+def test_dataset_get_status():
+    conn = get_fakeredis()
+    conn.flushdb()
+
+    dataset = Dataset(conn=conn, name="123")
+    status = dataset.get_status()
+
+    assert status["pending"] == 0
+    assert status["running"] == 0
+    assert status["finished"] == 0
+    assert status["start_time"] is None
+    assert status["last_update"] is None
+
+    task_one = Task(
+        task_id="1",
+        job_id="abc",
+        delivery_tag="",
+        operation="ingest",
+        context={},
+        payload={},
+        priority=5,
+        collection_id="1",
+    )
+
+    task_two = Task(
+        task_id="2",
+        job_id="abc",
+        delivery_tag="",
+        operation="ingest",
+        context={},
+        payload={},
+        priority=5,
+        collection_id="1",
+    )
+
+    task_three = Task(
+        task_id="3",
+        job_id="abc",
+        delivery_tag="",
+        operation="index",
+        context={},
+        payload={},
+        priority=5,
+        collection_id="1",
+    )
+
+    # Adding a task updates `start_time` and `last_update`
+    with time_machine.travel("2024-01-01T00:00:00"):
+        dataset.add_task(task_one.task_id, task_one.operation)
+
+    status = dataset.get_status()
+    assert status["pending"] == 1
+    assert status["running"] == 0
+    assert status["finished"] == 0
+    assert status["start_time"].startswith("2024-01-01T00:00:00")
+    assert status["last_update"].startswith("2024-01-01T00:00:00")
+
+    # Once a worker starts processing a task, only `last_update` is updated
+    with time_machine.travel("2024-01-02T00:00:00"):
+        dataset.checkout_task(task_one.task_id, task_one.operation)
+
+    status = dataset.get_status()
+    assert status["pending"] == 0
+    assert status["running"] == 1
+    assert status["finished"] == 0
+    assert status["start_time"].startswith("2024-01-01T00:00:00")
+    assert status["last_update"].startswith("2024-01-02T00:00:00")
+
+    # When another task is added, only `last_update` is updated
+    with time_machine.travel("2024-01-03T00:00:00"):
+        dataset.add_task(task_two.task_id, task_two.operation)
+
+    status = dataset.get_status()
+    assert status["pending"] == 1
+    assert status["running"] == 1
+    assert status["finished"] == 0
+    assert status["start_time"].startswith("2024-01-01T00:00:00")
+    assert status["last_update"].startswith("2024-01-03T00:00:00")
+
+    # When the first task has been processed, `last_update` is updated
+    with time_machine.travel("2024-01-04T00:00:00"):
+        dataset.mark_done(task_one)
+
+    status = dataset.get_status()
+    assert status["pending"] == 1
+    assert status["running"] == 0
+    assert status["finished"] == 1
+    assert status["start_time"].startswith("2024-01-01T00:00:00")
+    assert status["last_update"].startswith("2024-01-04T00:00:00")
+
+    # When the worker starts processing the second task, only `last_update` is updated
+    with time_machine.travel("2024-01-05T00:00:00"):
+        dataset.checkout_task(task_two.task_id, task_two.operation)
+
+    status = dataset.get_status()
+    assert status["pending"] == 0
+    assert status["running"] == 1
+    assert status["finished"] == 1
+    assert status["start_time"].startswith("2024-01-01T00:00:00")
+    assert status["last_update"].startswith("2024-01-05T00:00:00")
+
+    # Once all tasks have been processed, status data is flushed
+    with time_machine.travel("2024-01-06T00:00:00"):
+        dataset.mark_done(task_two)
+
+    status = dataset.get_status()
+    assert status["pending"] == 0
+    assert status["running"] == 0
+    assert status["finished"] == 0
+    assert status["start_time"] is None
+    assert status["last_update"] is None
+
+    # Adding a new task to an inactive dataset sets `start_time`
+    with time_machine.travel("2024-01-07T00:00:00"):
+        dataset.add_task(task_three.task_id, task_three.operation)
+
+    status = dataset.get_status()
+    assert status["pending"] == 1
+    assert status["running"] == 0
+    assert status["finished"] == 0
+    assert status["start_time"].startswith("2024-01-07T00:00:00")
+    assert status["last_update"].startswith("2024-01-07T00:00:00")
+
+    # Cancelling a dataset flushes status data
+    with time_machine.travel("2024-01-08T00:00:00"):
+        dataset.checkout_task(task_three.task_id, task_three.operation)
+        dataset.cancel()
+
+    status = dataset.get_status()
+    assert status["pending"] == 0
+    assert status["running"] == 0
+    assert status["finished"] == 0
+    assert status["start_time"] is None
+    assert status["last_update"] is None
+
+    # Tasks that were already running when the dataset was cancelled
+    # have no effect
+    with time_machine.travel("2024-01-09T00:00:00"):
+        dataset.mark_done(task_three)
+
+    assert status["pending"] == 0
+    assert status["running"] == 0
+    assert status["finished"] == 0
+    assert status["start_time"] is None
+    assert status["last_update"] is None
+
+
+def test_dataset_cancel():
+    conn = get_fakeredis()
+    conn.flushdb()
+
+    dataset = Dataset(conn=conn, name="abc")
+    assert conn.keys() == []
+
+    # Enqueueing tasks stores status data in Redis
+    dataset.add_task("1", "ingest")
+    dataset.add_task("2", "index")
+    dataset.checkout_task("1", "ingest")
+    assert conn.keys() != []
+
+    # Cancelling a dataset removes associated data from Redis
+    dataset.cancel()
+    assert conn.keys() == []
+
+
+def test_dataset_mark_done():
+    conn = get_fakeredis()
+    conn.flushdb()
+
+    dataset = Dataset(conn=conn, name="abc")
+    assert conn.keys() == []
+
+    task = Task(
+        task_id="1",
+        job_id="abc",
+        delivery_tag="",
+        operation="ingest",
+        context={},
+        payload={},
+        priority=5,
+        collection_id="abc",
+    )
+
+    # Enqueueing a task stores status data in Redis
+    dataset.add_task(task.task_id, task.operation)
+    dataset.checkout_task(task.task_id, task.operation)
+    assert conn.keys() != []
+
+    # Marking the last task as done cleans up status data in Redis
+    dataset.mark_done(task)
+    assert conn.keys() == []
 
 
 @pytest.fixture
@@ -325,7 +516,6 @@ def test_get_priority_bucket():
                         }
                     ],
                     "start_time": "2024-06-25T10:58:49.779811",
-                    "end_time": None,
                     "last_update": "2024-06-25T10:58:49.779819",
                 }
             },
@@ -354,7 +544,6 @@ def test_get_priority_bucket():
                         }
                     ],
                     "start_time": "2024-06-25T10:58:49.779811",
-                    "end_time": None,
                     "last_update": "2024-06-25T10:58:49.779819",
                 }
             },

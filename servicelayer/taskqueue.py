@@ -83,7 +83,6 @@ class Dataset:
         self.running_key = make_key(PREFIX, "qdj", name, "running")
         self.pending_key = make_key(PREFIX, "qdj", name, "pending")
         self.start_key = make_key(PREFIX, "qdj", name, "start")
-        self.end_key = make_key(PREFIX, "qdj", name, "end")
         self.last_update_key = make_key(PREFIX, "qdj", name, "last_update")
         self.active_stages_key = make_key(PREFIX, "qds", name, "active_stages")
 
@@ -115,19 +114,14 @@ class Dataset:
         """Cancel processing of all tasks belonging to a dataset"""
         pipe = self.conn.pipeline()
         self.flush_status(pipe)
-        # What should happen to the end_key in this case?
-        pipe.delete(self.end_key)
         pipe.execute()
 
     def get_status(self):
         """Status of a given dataset."""
         status = {"finished": 0, "running": 0, "pending": 0, "stages": []}
 
-        start, end, last_update = self.conn.mget(
-            (self.start_key, self.end_key, self.last_update_key)
-        )
+        start, last_update = self.conn.mget((self.start_key, self.last_update_key))
         status["start_time"] = start
-        status["end_time"] = end
         status["last_update"] = last_update
 
         for stage in self.conn.smembers(self.active_stages_key):
@@ -226,9 +220,8 @@ class Dataset:
         pipe.sadd(self.pending_key, task_id)
 
         # update dataset timestamps
-        pipe.set(self.start_key, pack_now())
+        pipe.set(self.start_key, pack_now(), nx=True)
         pipe.set(self.last_update_key, pack_now())
-        pipe.delete(self.end_key)
         pipe.execute()
 
     def remove_task(self, task_id, stage):
@@ -279,9 +272,8 @@ class Dataset:
         pipe.srem(self.pending_key, task_id)
 
         # update dataset timestamps
-        pipe.set(self.start_key, pack_now())
+        pipe.set(self.start_key, pack_now(), nx=True)
         pipe.set(self.last_update_key, pack_now())
-        pipe.delete(self.end_key)
         pipe.execute()
 
     def mark_done(self, task: Task):
@@ -309,8 +301,8 @@ class Dataset:
         pipe.incr(make_key(stage_key, "finished"))
 
         # update dataset timestamps
-        pipe.set(self.end_key, pack_now())
         pipe.set(self.last_update_key, pack_now())
+
         pipe.execute()
 
         if self.is_done():
