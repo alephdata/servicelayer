@@ -223,9 +223,7 @@ class Dataset:
         pipe.set(self.last_update_key, pack_now())
         pipe.execute()
 
-        status = self.get_status()
-        if status["running"] == 0 and status["pending"] == 0:
-            pipe = self.conn.pipeline()
+        if self.is_done():
             self.flush_status(pipe)
             pipe.execute()
 
