@@ -144,32 +144,6 @@ class Dataset:
             result["datasets"][dataset.name] = status
         return result
 
-    @classmethod
-    def cleanup_dataset_status(cls, conn):
-        """Clean up dataset status for inactive datasets."""
-        datasets_key = make_key(PREFIX, "qdatasets")
-        for name in conn.smembers(datasets_key):
-            dataset = cls(conn, name)
-            status = dataset.get_status()
-            if status["running"] == 0 and status["pending"] == 0:
-                pipe = conn.pipeline()
-                # remove the dataset from active datasets
-                pipe.srem(dataset.key, dataset.name)
-                # reset finished task count
-                pipe.delete(dataset.finished_key)
-                # delete information about running stages
-                for stage in dataset.conn.smembers(dataset.active_stages_key):
-                    stage_key = dataset.get_stage_key(stage)
-                    pipe.delete(stage_key)
-                    pipe.delete(make_key(stage_key, "pending"))
-                    pipe.delete(make_key(stage_key, "running"))
-                    pipe.delete(make_key(stage_key, "finished"))
-                # delete stages key
-                pipe.delete(dataset.active_stages_key)
-                pipe.set(dataset.last_update_key, pack_now())
-
-                pipe.execute()
-
     def should_execute(self, task_id):
         """Should a task be executed?
 
