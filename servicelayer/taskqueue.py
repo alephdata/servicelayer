@@ -222,7 +222,6 @@ class Dataset:
         # update dataset timestamps
         pipe.set(self.start_key, pack_now(), nx=True)
         pipe.set(self.last_update_key, pack_now())
-        pipe.delete(self.end_key)
         pipe.execute()
 
     def remove_task(self, task_id, stage):
@@ -303,7 +302,7 @@ class Dataset:
 
         # update dataset timestamps
         pipe.set(self.last_update_key, pack_now())
-        
+
         pipe.execute()
 
         if self.is_done():
@@ -364,29 +363,6 @@ class Dataset:
             tracked = False
 
         return tracked
-
-    def flush_status(self, pipe):
-        """Flush status data such as timestamps and task counts"""
-        # remove the dataset from active datasets
-        pipe.srem(self.key, self.name)
-
-        # reset finished task count
-        pipe.delete(self.finished_key)
-
-        # reset timestamps
-        pipe.delete(self.start_key)
-        pipe.delete(self.last_update_key)
-
-        # delete information about running stages
-        for stage in self.conn.smembers(self.active_stages_key):
-            stage_key = self.get_stage_key(stage)
-            pipe.delete(stage_key)
-            pipe.delete(make_key(stage_key, "pending"))
-            pipe.delete(make_key(stage_key, "running"))
-            pipe.delete(make_key(stage_key, "finished"))
-
-        # delete stages key
-        pipe.delete(self.active_stages_key)
 
     @classmethod
     def is_low_prio(cls, conn, collection_id):
