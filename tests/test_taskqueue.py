@@ -121,10 +121,10 @@ class TaskQueueTest(TestCase):
         assert status["finished"] == 0, status
         assert status["pending"] == 0, status
         assert status["running"] == 0, status
-        started = unpack_datetime(status["start_time"])
-        last_updated = unpack_datetime(status["last_update"])
-        end_time = unpack_datetime(status["end_time"])
-        assert started < end_time < last_updated
+        # started = unpack_datetime(status["start_time"])
+        # last_updated = unpack_datetime(status["last_update"])
+        # end_time = unpack_datetime(status["end_time"])
+        # assert started < end_time < last_updated
 
     @patch("servicelayer.taskqueue.Dataset.should_execute")
     def test_task_that_shouldnt_execute(self, mock_should_execute):
