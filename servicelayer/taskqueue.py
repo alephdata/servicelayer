@@ -829,9 +829,20 @@ def queue_task(
         "priority": priority,
     }
     try:
+        exchange = ""
+        routing_key = stage
+        if stage == "index":
+            exchange = "amq.topic"
+            if collection_id:
+                routing_key += f".{collection_id}"
+            else:
+                routing_key += ".0"
+        log.debug(
+            f"Publish to exchange '{exchange}' with routing_key {routing_key}"
+        )  # noqa
         rmq_channel.basic_publish(
-            exchange="",
-            routing_key=stage,
+            exchange=exchange,
+            routing_key=routing_key,
             body=json.dumps(body),
             properties=pika.BasicProperties(
                 delivery_mode=pika.spec.PERSISTENT_DELIVERY_MODE, priority=priority
