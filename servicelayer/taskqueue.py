@@ -711,7 +711,7 @@ class Worker(ABC):
                     self.on_message(channel, method, properties, body)
 
         for queue in self.queues:
-            thread = threading.Thread(target=consume_queue, queue=queue)
+            thread = threading.Thread(target=consume_queue, args=(queue,))
             thread.daemon = True
             thread.start()
             threads.append(thread)
