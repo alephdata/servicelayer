@@ -709,6 +709,8 @@ class Worker(ABC):
             ):
                 if method:
                     self.on_message(channel, method, properties, body)
+                else:
+                    continue
 
         for queue in self.queues:
             declare_rabbitmq_queue(
