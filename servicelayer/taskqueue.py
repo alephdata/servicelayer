@@ -700,14 +700,21 @@ class Worker(ABC):
         log.info(f"Worker has {self.num_threads} worker threads.")
 
         channel = get_rabbitmq_channel()
-        on_message_callback = functools.partial(self.on_message, args=(channel,))
+
+        def consume_queue(queue):
+            for method, properties, body in channel.consume(
+                queue,
+                inactivity_timeout=10,
+                prefetch_count=self.prefetch_count_mapping[queue],
+            ):
+                if method:
+                    self.on_message(channel, method, properties, body)
 
         for queue in self.queues:
-            declare_rabbitmq_queue(
-                channel, queue, prefetch_count=self.prefetch_count_mapping[queue]
-            )
-            channel.basic_consume(queue=queue, on_message_callback=on_message_callback)
-        channel.start_consuming()
+            thread = threading.Thread(target=consume_queue, queue=queue)
+            thread.daemon = True
+            thread.start()
+            threads.append(thread)
 
 
 def get_rabbitmq_channel() -> BlockingChannel:
