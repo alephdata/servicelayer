@@ -702,6 +702,7 @@ class Worker(ABC):
         channel = get_rabbitmq_channel()
 
         def consume_queue(queue):
+            channel = get_rabbitmq_channel()
             for method, properties, body in channel.consume(
                 queue,
                 inactivity_timeout=10,
