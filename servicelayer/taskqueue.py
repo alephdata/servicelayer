@@ -705,12 +705,14 @@ class Worker(ABC):
             for method, properties, body in channel.consume(
                 queue,
                 inactivity_timeout=10,
-                prefetch_count=self.prefetch_count_mapping[queue],
             ):
                 if method:
                     self.on_message(channel, method, properties, body)
 
         for queue in self.queues:
+            declare_rabbitmq_queue(
+                channel, queue, prefetch_count=self.prefetch_count_mapping[queue]
+            )
             thread = threading.Thread(target=consume_queue, args=(queue,))
             thread.daemon = True
             thread.start()
