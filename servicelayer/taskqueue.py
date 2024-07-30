@@ -699,24 +699,29 @@ class Worker(ABC):
 
         log.info(f"Worker has {self.num_threads} worker threads.")
 
-        channel = get_rabbitmq_channel()
-
-        def consume_queue(queue):
+        def consume_queue(queue, fn):
             channel = get_rabbitmq_channel()
             for method, properties, body in channel.consume(
                 queue,
                 inactivity_timeout=10,
             ):
                 if method:
-                    self.on_message(channel, method, properties, body)
+                    fn(channel, method, properties, body)
                 else:
                     continue
 
+        channel = get_rabbitmq_channel()
         for queue in self.queues:
             declare_rabbitmq_queue(
                 channel, queue, prefetch_count=self.prefetch_count_mapping[queue]
             )
-            thread = threading.Thread(target=consume_queue, args=(queue,))
+            thread = threading.Thread(
+                target=consume_queue,
+                args=(
+                    queue,
+                    self.on_message,
+                ),
+            )
             thread.daemon = True
             thread.start()
             threads.append(thread)
