@@ -513,7 +513,7 @@ class Worker(ABC):
                 success, retry = self.handle(task, channel)
                 log.debug(
                     f"Task {task.task_id} finished with success={success}"
-                    f" and retry={retry}"
+                    f"{'' if success else ' and retry=' + str(retry)}"
                 )
                 if success:
                     cb = functools.partial(self.ack_message, task, channel)
