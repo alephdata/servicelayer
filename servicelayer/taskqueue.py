@@ -541,6 +541,7 @@ class Worker(ABC):
                 else:
                     queue_active[queue] = True
                     task = get_task(body, method.delivery_tag)
+                    task._channel = channel
                     success, retry = self.handle(task, channel)
                     if success:
                         channel.basic_ack(task.delivery_tag)
