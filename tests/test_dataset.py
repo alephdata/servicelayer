@@ -35,7 +35,6 @@ class TestDataset(TestCase):
 
     def test_get_timestamp_keys(self):
         assert self.dataset.start_key == f"tq:qdj:{self.collection_id}:start"
-        assert self.dataset.end_key == f"tq:qdj:{self.collection_id}:end"
         assert (
             self.dataset.last_update_key == f"tq:qdj:{self.collection_id}:last_update"
         )

@@ -328,7 +328,6 @@ class Dataset:
         stage_key = self.get_stage_key(stage)
         pipe.srem(make_key(stage_key, "pending"), task_id)
         pipe.srem(make_key(stage_key, "running"), task_id)
-        pipe.incr(make_key(stage_key, "finished"))
 
         # update dataset timestamps
         pipe.set(self.last_update_key, pack_now())
