@@ -385,8 +385,6 @@ class Dataset:
         task_id = task.task_id
         stage = task.operation
 
-        stage_key = self.get_stage_key(stage)
-
         # A task is considered tracked if
         # the dataset is in the list of active datasets
         if dataset not in self.conn.smembers(self.key):
