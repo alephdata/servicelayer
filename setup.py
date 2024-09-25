@@ -6,7 +6,7 @@ with open("README.md") as f:
 
 setup(
     name="servicelayer",
-    version="1.23.0-rc32",
+    version="1.23.0-rc34",
     description="Basic remote service functions for alephdata components",
     classifiers=[
         "Development Status :: 3 - Alpha",
@@ -51,6 +51,7 @@ setup(
             "pytest >= 3.6",
             "coverage",
             "pytest-cov",
+            "time-machine>=2.14.1, <3.0.0",
         ],
     },
     test_suite="tests",
