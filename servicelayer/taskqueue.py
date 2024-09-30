@@ -354,17 +354,21 @@ class Dataset:
         pipe.srem(self.pending_key, task_id)
         pipe.srem(self.running_key, task_id)
 
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage, "pending"), task_id)
         pipe.srem(make_key(PREFIX, "qds", self.name, stage, "running"), task_id)
         pipe.srem(make_key(PREFIX, "qds", self.name, stage), task_id)
 
         # TODO - remove when there are no wrong tasks left
         stage_key = self.get_stage_key(task.operation)
+        pipe.srem(make_key(stage_key, "pending"), task.task_id)
         pipe.srem(make_key(stage_key, "running"), task.task_id)
 
         # delete the retry key for the task
         pipe.delete(task.retry_key)
 
         pipe.set(self.last_update_key, pack_now())
+
+        pipe.execute()
 
     def is_done(self):
         status = self.get_status()
