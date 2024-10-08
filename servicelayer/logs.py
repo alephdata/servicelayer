@@ -86,7 +86,7 @@ def apply_task_context(task, **kwargs):
         start_time=time.time(),
         trace_id=str(uuid.uuid4()),
         retry=unpack_int(task.context.get("retries")),
-        **kwargs
+        **kwargs,
     )
 
 

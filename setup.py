@@ -6,7 +6,7 @@ with open("README.md") as f:
 
 setup(
     name="servicelayer",
-    version="1.22.2",
+    version="1.23.0-rc36",
     description="Basic remote service functions for alephdata components",
     classifiers=[
         "Development Status :: 3 - Alpha",
@@ -43,6 +43,15 @@ setup(
         "google": [
             "grpcio >= 1.32.0, <2.0.0",
             "google-cloud-storage >= 1.31.0, < 3.0.0",
+        ],
+        "dev": [
+            "twine",
+            "moto < 5",
+            "boto3 >= 1.11.9, <2.0.0",
+            "pytest >= 3.6",
+            "coverage",
+            "pytest-cov",
+            "time-machine>=2.14.1, <3.0.0",
         ],
     },
     test_suite="tests",

@@ -3,6 +3,9 @@ version: "3.2"
 services:
   rabbitmq:
     image: rabbitmq:3.9-management-alpine
+    ports:
+      - '127.0.0.1:5673:5672'
+      - '127.0.0.1:15673:15672'
 
   shell:
     build:

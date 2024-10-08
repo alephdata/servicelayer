@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple, List
 import json
 import time
 import threading
@@ -9,30 +9,33 @@ import sys
 from abc import ABC, abstractmethod
 import functools
 from queue import Queue, Empty
+import platform
+from collections import defaultdict
+from threading import Thread
+from timeit import default_timer
+import uuid
+from random import randrange
+
+import pika.spec
+from pika.adapters.blocking_connection import BlockingChannel
+from prometheus_client import start_http_server
 
 from structlog.contextvars import clear_contextvars, bind_contextvars
 import pika
 from banal import ensure_list
+from redis import Redis
 
 from servicelayer.cache import get_redis, make_key
-from servicelayer.util import unpack_int
+from servicelayer.util import pack_now, unpack_int
 from servicelayer import settings
 from servicelayer.util import service_retries, backoff
+from servicelayer import metrics
 
 log = logging.getLogger(__name__)
 local = threading.local()
 
-
 PREFIX = "tq"
 NO_COLLECTION = "null"
-
-
-OP_INGEST = "ingest"
-OP_ANALYZE = "analyze"
-OP_INDEX = "index"
-
-# ToDo: consider ALEPH_INGEST_PIPELINE setting
-INGEST_OPS = (OP_INGEST, OP_ANALYZE)
 
 TIMEOUT = 5
 
@@ -45,6 +48,7 @@ class Task:
     operation: str
     context: dict
     payload: dict
+    priority: int
     collection_id: Optional[str] = None
 
     @property
@@ -78,27 +82,78 @@ class Dataset:
         # sets that contain task ids of running and pending tasks
         self.running_key = make_key(PREFIX, "qdj", name, "running")
         self.pending_key = make_key(PREFIX, "qdj", name, "pending")
+        self.start_key = make_key(PREFIX, "qdj", name, "start")
+        self.last_update_key = make_key(PREFIX, "qdj", name, "last_update")
+        self.active_stages_key = make_key(PREFIX, "qds", name, "active_stages")
+
+    def flush_status(self, pipe):
+        # remove the dataset from active datasets
+        pipe.srem(self.key, self.name)
+
+        # reset timestamps
+        pipe.delete(self.start_key)
+        pipe.delete(self.last_update_key)
+
+        # delete information about running stages
+        for stage in self.conn.smembers(self.active_stages_key):
+            pipe.delete(make_key(PREFIX, "qds", self.name, stage))
+            pipe.delete(make_key(PREFIX, "qds", self.name, stage, "pending"))
+            pipe.delete(make_key(PREFIX, "qds", self.name, stage, "running"))
+            pipe.delete(make_key(PREFIX, "qds", self.name, stage, "finished"))
+
+        # delete information about tasks per dataset
+        pipe.delete(self.pending_key)
+        pipe.delete(self.running_key)
+        pipe.delete(self.finished_key)
+
+        # delete stages key
+        pipe.delete(self.active_stages_key)
 
     def cancel(self):
         """Cancel processing of all tasks belonging to a dataset"""
         pipe = self.conn.pipeline()
-        # remove the dataset from active datasets
-        pipe.srem(self.key, self.name)
-        # clean up tasks and task counts
-        pipe.delete(self.finished_key)
-        pipe.delete(self.running_key)
-        pipe.delete(self.pending_key)
+        self.flush_status(pipe)
         pipe.execute()
 
     def get_status(self):
         """Status of a given dataset."""
-        status = {"finished": 0, "running": 0, "pending": 0}
-        finished = self.conn.get(self.finished_key)
-        running = self.conn.scard(self.running_key)
-        pending = self.conn.scard(self.pending_key)
-        status["finished"] = max(0, unpack_int(finished))
-        status["running"] = max(0, unpack_int(running))
-        status["pending"] = max(0, unpack_int(pending))
+        status = {"finished": 0, "running": 0, "pending": 0, "stages": []}
+
+        start, last_update = self.conn.mget((self.start_key, self.last_update_key))
+        status["start_time"] = start
+        status["last_update"] = last_update
+
+        for stage in self.conn.smembers(self.active_stages_key):
+            num_pending = unpack_int(
+                self.conn.scard(make_key(PREFIX, "qds", self.name, stage, "pending"))
+            )
+            num_running = unpack_int(
+                self.conn.scard(make_key(PREFIX, "qds", self.name, stage, "running"))
+            )
+            num_finished = unpack_int(
+                self.conn.get(make_key(PREFIX, "qds", self.name, stage, "finished"))
+            )
+
+            status["stages"].append(
+                {
+                    "job_id": "",
+                    "stage": stage,
+                    "pending": max(0, num_pending),
+                    "running": max(0, num_running),
+                    "finished": max(0, num_finished),
+                }
+            )
+
+        status["finished"] = max(
+            0, sum([stage["finished"] for stage in status["stages"]])
+        )
+        status["running"] = max(
+            0, sum([stage["running"] for stage in status["stages"]])
+        )
+        status["pending"] = max(
+            0, sum([stage["pending"] for stage in status["stages"]])
+        )
+
         return status
 
     @classmethod
@@ -119,13 +174,9 @@ class Dataset:
         datasets_key = make_key(PREFIX, "qdatasets")
         for name in conn.smembers(datasets_key):
             dataset = cls(conn, name)
-            status = dataset.get_status()
-            if status["running"] == 0 and status["pending"] == 0:
+            if dataset.is_done():
                 pipe = conn.pipeline()
-                # remove the dataset from active datasets
-                pipe.srem(dataset.key, dataset.name)
-                # reset finished task count
-                pipe.delete(dataset.finished_key)
+                dataset.flush_status(pipe)
                 pipe.execute()
 
     def should_execute(self, task_id):
@@ -140,7 +191,7 @@ class Dataset:
             _should_execute = self.conn.sismember(
                 self.pending_key, task_id
             ) or self.conn.sismember(self.running_key, task_id)
-            if not _should_execute and attempt < settings.WORKER_RETRY:
+            if not _should_execute and attempt - 1 in service_retries():
                 # Sometimes for new tasks the check fails because the Redis
                 # state gets updated only after the task gets written to disk
                 # by RabbitMQ whereas the worker consumer gets the task before
@@ -151,47 +202,127 @@ class Dataset:
                 continue
             return _should_execute
 
-    def add_task(self, task_id):
+    def add_task(self, task_id, stage):
         """Update state when a new task is added to the task queue"""
         log.info(f"Adding task: {task_id}")
         pipe = self.conn.pipeline()
         # add the dataset to active datasets
         pipe.sadd(self.key, self.name)
+
+        # update status of stages per dataset
+        pipe.sadd(self.active_stages_key, stage)
+        pipe.sadd(make_key(PREFIX, "qds", self.name, stage), task_id)
+        pipe.sadd(make_key(PREFIX, "qds", self.name, stage, "pending"), task_id)
+
+        # add the task to the set of pending tasks per dataset
         pipe.sadd(self.pending_key, task_id)
+
+        # update dataset timestamps
+        pipe.set(self.start_key, pack_now(), nx=True)
+        pipe.set(self.last_update_key, pack_now())
         pipe.execute()
 
-    def remove_task(self, task_id):
+    def remove_task(self, task_id, stage):
         """Remove a task that's not going to be executed"""
         log.info(f"Removing task: {task_id}")
-        self.conn.srem(self.pending_key, task_id)
-        status = self.get_status()
-        if status["running"] == 0 and status["pending"] == 0:
-            # remove the dataset from active datasets
-            self.conn.srem(self.key, self.name)
+        pipe = self.conn.pipeline()
 
-    def checkout_task(self, task_id):
+        # remove the task from the set of pending tasks per dataset
+        pipe.srem(self.pending_key, task_id)
+
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage), task_id)
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage, "pending"), task_id)
+
+        # delete the retry key for this task
+        pipe.delete(make_key(PREFIX, "qdj", self.name, "taskretry", task_id))
+
+        pipe.execute()
+
+        if self.is_done():
+            pipe = self.conn.pipeline()
+            self.flush_status(pipe)
+            pipe.execute()
+
+    def checkout_task(self, task_id, stage):
         """Update state when a task is checked out for execution"""
         log.info(f"Checking out task: {task_id}")
         pipe = self.conn.pipeline()
         # add the dataset to active datasets
         pipe.sadd(self.key, self.name)
-        pipe.srem(self.pending_key, task_id)
+
+        # update status of stages per dataset
+        pipe.sadd(self.active_stages_key, stage)
+        pipe.sadd(make_key(PREFIX, "qds", self.name, stage), task_id)
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage, "pending"), task_id)
+        pipe.sadd(make_key(PREFIX, "qds", self.name, stage, "running"), task_id)
+
+        # add the task to the set of running tasks per dataset
         pipe.sadd(self.running_key, task_id)
+        # remove the task from the set of pending tasks per dataset
+        pipe.srem(self.pending_key, task_id)
+
+        # update dataset timestamps
+        pipe.set(self.start_key, pack_now(), nx=True)
+        pipe.set(self.last_update_key, pack_now())
         pipe.execute()
 
     def mark_done(self, task: Task):
         """Update state when a task is finished executing"""
         log.info(f"Finished executing task: {task.task_id}")
         pipe = self.conn.pipeline()
+
+        # remove the task from the pending and running sets of tasks per dataset
         pipe.srem(self.pending_key, task.task_id)
         pipe.srem(self.running_key, task.task_id)
+
+        # increase the number of finished tasks per dataset
         pipe.incr(self.finished_key)
+
+        # delete the retry key for the task
         pipe.delete(task.retry_key)
+
+        stage = task.operation
+        task_id = task.task_id
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage), task_id)
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage, "pending"), task_id)
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage, "running"), task_id)
+        pipe.incr(make_key(PREFIX, "qds", self.name, stage, "finished"))
+
+        # update dataset timestamps
+        pipe.set(self.last_update_key, pack_now())
+
         pipe.execute()
-        status = self.get_status()
-        if status["running"] == 0 and status["pending"] == 0:
-            # remove the dataset from active datasets
-            self.conn.srem(self.key, self.name)
+
+        if self.is_done():
+            pipe = self.conn.pipeline()
+            self.flush_status(pipe)
+            pipe.execute()
+
+    def mark_for_retry(self, task):
+        pipe = self.conn.pipeline()
+
+        log.info(
+            f"Marking task {task.task_id} (stage {task.operation})"
+            f" for retry after NACK"
+        )
+
+        stage = task.operation
+        task_id = task.task_id
+
+        # remove the task from the pending and running sets of tasks per dataset
+        pipe.srem(self.pending_key, task_id)
+        pipe.srem(self.running_key, task_id)
+
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage, "pending"), task_id)
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage, "running"), task_id)
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage), task_id)
+
+        # delete the retry key for the task
+        pipe.delete(task.retry_key)
+
+        pipe.set(self.last_update_key, pack_now())
+
+        pipe.execute()
 
     def is_done(self):
         status = self.get_status()
@@ -199,6 +330,40 @@ class Dataset:
 
     def __str__(self):
         return self.name
+
+    def is_task_tracked(self, task: Task):
+        tracked = True
+
+        dataset = dataset_from_collection_id(task.collection_id)
+        task_id = task.task_id
+        stage = task.operation
+
+        # A task is considered tracked if
+        # the dataset is in the list of active datasets
+        if dataset not in self.conn.smembers(self.key):
+            tracked = False
+        # and the stage is in the list of active stages
+        elif stage not in self.conn.smembers(self.active_stages_key):
+            tracked = False
+        # and the task_id is in the list of task_ids per stage
+        elif task_id not in self.conn.smembers(
+            make_key(PREFIX, "qds", self.name, stage)
+        ):
+            tracked = False
+
+        return tracked
+
+    @classmethod
+    def is_low_prio(cls, conn, collection_id):
+        """This Dataset is on the low prio list."""
+        key = make_key(PREFIX, "prio", "low")
+        return conn.sismember(key, collection_id)
+
+    @classmethod
+    def is_high_prio(cls, conn, collection_id):
+        """This Dataset is on the high prio list."""
+        key = make_key(PREFIX, "prio", "high")
+        return conn.sismember(key, collection_id)
 
 
 def get_task(body, delivery_tag) -> Task:
@@ -211,6 +376,7 @@ def get_task(body, delivery_tag) -> Task:
         operation=body["operation"],
         context=body["context"] or {},
         payload=body["payload"] or {},
+        priority=body["priority"] or 0,
     )
 
 
@@ -243,14 +409,16 @@ def apply_task_context(task: Task, **kwargs):
     )
 
 
-def get_routing_key(stage):
-    if stage in INGEST_OPS:
-        routing_key = settings.QUEUE_INGEST
-    elif stage == OP_INDEX:
-        routing_key = settings.QUEUE_INDEX
-    else:
-        routing_key = settings.QUEUE_ALEPH
-    return routing_key
+def declare_rabbitmq_queue(channel, queue, prefetch_count=1):
+    channel.basic_qos(global_qos=False, prefetch_count=prefetch_count)
+    channel.queue_declare(
+        queue=queue,
+        durable=True,
+        arguments={
+            "x-max-priority": settings.RABBITMQ_MAX_PRIORITY,
+            "x-overflow": "reject-publish",
+        },
+    )
 
 
 class MaxRetriesExceededError(Exception):
@@ -261,17 +429,51 @@ class Worker(ABC):
     def __init__(
         self,
         queues,
-        conn=None,
+        conn: Redis = None,
         num_threads=settings.WORKER_THREADS,
         version=None,
-        prefetch_count=100,
+        prefetch_count_mapping=defaultdict(lambda: 1),
     ):
+        if settings.SENTRY_DSN:
+            import sentry_sdk
+
+            sentry_sdk.init(
+                dsn=settings.SENTRY_DSN,
+                traces_sample_rate=0,
+                release=settings.SENTRY_RELEASE,
+                environment=settings.SENTRY_ENVIRONMENT,
+                send_default_pii=False,
+            )
+
         self.conn = conn or get_redis()
         self.num_threads = num_threads
         self.queues = ensure_list(queues)
         self.version = version
-        self.prefetch_count = prefetch_count
         self.local_queue = Queue()
+        self.prefetch_count_mapping = prefetch_count_mapping
+        if settings.SENTRY_DSN:
+            import sentry_sdk
+
+            sentry_sdk.init(
+                dsn=settings.SENTRY_DSN,
+                traces_sample_rate=0,
+                release=settings.SENTRY_RELEASE,
+                environment=settings.SENTRY_ENVIRONMENT,
+                send_default_pii=False,
+            )
+
+    def run_prometheus_server(self):
+        if not settings.PROMETHEUS_ENABLED:
+            return
+
+        def run_server():
+            port = settings.PROMETHEUS_PORT
+            log.info(f"Running Prometheus metrics server on port {port}")
+            start_http_server(port)
+
+        thread = Thread(target=run_server)
+        thread.start()
+        thread.join()
 
     def on_signal(self, signal, _):
         log.warning(f"Shutting down worker (signal {signal})")
@@ -284,19 +486,29 @@ class Worker(ABC):
         We have to make sure it doesn't block for long to ensure that RabbitMQ
         heartbeats are not interrupted.
         """
-        connection = args[0]
         task = get_task(body, method.delivery_tag)
-        self.local_queue.put((task, channel, connection))
+        # the task needs to be acknowledged in the same channel that it was
+        # received. So store the channel. This is useful when executing batched
+        # indexing tasks since they are acknowledged late.
+        task._channel = channel
+        self.local_queue.put((task, channel))
 
     def process_blocking(self):
         """Blocking worker thread - executes tasks from a queue and periodic tasks"""
         while True:
             try:
-                (task, channel, connection) = self.local_queue.get(timeout=TIMEOUT)
+                (task, channel) = self.local_queue.get(timeout=TIMEOUT)
                 apply_task_context(task, v=self.version)
-                self.handle(task)
-                cb = functools.partial(self.ack_message, task, channel)
-                connection.add_callback_threadsafe(cb)
+                success, retry = self.handle(task, channel)
+                log.debug(
+                    f"Task {task.task_id} finished with success={success}"
+                    f"{'' if success else ' and retry=' + str(retry)}"
+                )
+                if success:
+                    cb = functools.partial(self.ack_message, task, channel)
+                else:
+                    cb = functools.partial(self.nack_message, task, channel, retry)
+                channel.connection.add_callback_threadsafe(cb)
             except Empty:
                 pass
             finally:
@@ -305,8 +517,7 @@ class Worker(ABC):
 
     def process_nonblocking(self):
         """Non-blocking worker is used for tests only."""
-        connection = get_rabbitmq_connection()
-        channel = connection.channel()
+        channel = get_rabbitmq_channel()
         queue_active = {queue: True for queue in self.queues}
         while True:
             for queue in self.queues:
@@ -319,7 +530,12 @@ class Worker(ABC):
                 else:
                     queue_active[queue] = True
                     task = get_task(body, method.delivery_tag)
-                    self.handle(task)
+                    task._channel = channel
+                    success, retry = self.handle(task, channel)
+                    if success:
+                        channel.basic_ack(task.delivery_tag)
+                    else:
+                        channel.basic_nack(task.delivery_tag, requeue=retry)
 
     def process(self, blocking=True):
         if blocking:
@@ -327,26 +543,71 @@ class Worker(ABC):
         else:
             self.process_nonblocking()
 
-    def handle(self, task: Task):
-        """Execute a task."""
+    def handle(self, task: Task, channel) -> Tuple[bool, bool]:
+        """Execute a task.
+
+        Returns a tuple of (success, retry)."""
+        success = True
+        retry = True
+
+        task_retry_count = task.get_retry_count(self.conn)
+
         try:
             dataset = Dataset(
                 conn=self.conn, name=dataset_from_collection_id(task.collection_id)
             )
             if dataset.should_execute(task.task_id):
-                if task.get_retry_count(self.conn) > settings.WORKER_RETRY:
+                if task_retry_count > settings.WORKER_RETRY:
                     raise MaxRetriesExceededError(
                         f"Max retries reached for task {task.task_id}. Aborting."
                     )
-                dataset.checkout_task(task.task_id)
+
+                dataset.checkout_task(task.task_id, task.operation)
                 task.increment_retry_count(self.conn)
+
+                # Emit Prometheus metrics
+                metrics.TASKS_STARTED.labels(stage=task.operation).inc()
+                start_time = default_timer()
+                log.info(
+                    f"Dispatching task {task.task_id} from job {task.job_id}"
+                    f"to worker {platform.node()}"
+                )
+
                 task = self.dispatch_task(task)
+
+                # Emit Prometheus metrics
+                duration = max(0, default_timer() - start_time)
+                metrics.TASK_DURATION.labels(stage=task.operation).observe(duration)
+                metrics.TASKS_SUCCEEDED.labels(
+                    stage=task.operation, retries=task_retry_count
+                ).inc()
             else:
-                log.warn(f"Discarding task: {task.task_id}")
+                log.info(
+                    f"Sending a NACK for message {task.delivery_tag}"
+                    f" for task_id {task.task_id}."
+                    f" Message will be requeued."
+                )
+                # In this case, a task ID was found neither in the
+                # list of Pending, nor the list of Running tasks
+                # in Redis. It was never attempted.
+                success = False
+        except MaxRetriesExceededError:
+            log.exception(
+                f"Task {task.task_id} permanently failed and will be discarded."
+            )
+            success = False
+            retry = False
         except Exception:
             log.exception("Error in task handling")
+            metrics.TASKS_FAILED.labels(
+                stage=task.operation,
+                retries=task_retry_count,
+                failed_permanently=task_retry_count >= settings.WORKER_RETRY,
+            ).inc()
+            success = False
         finally:
             self.after_task(task)
+        return success, retry
 
     @abstractmethod
     def dispatch_task(self, task: Task) -> Task:
@@ -360,7 +621,7 @@ class Worker(ABC):
         """Periodic tasks to run."""
         pass
 
-    def ack_message(self, task, channel):
+    def ack_message(self, task, channel, multiple=False):
         """Acknowledge a task after execution.
 
         RabbitMQ requires that the channel used for receiving the message must be used
@@ -370,8 +631,8 @@ class Worker(ABC):
         skip_ack = task.context.get("skip_ack")
         if skip_ack:
             log.info(
-                f"Skipping acknowledging message {task.delivery_tag}"
-                "for task_id {task.task_id}"
+                f"Skipping acknowledging message"
+                f"{task.delivery_tag} for task_id {task.task_id}"
             )
         else:
             log.info(
@@ -381,7 +642,24 @@ class Worker(ABC):
             # Sync state to redis
             dataset.mark_done(task)
             if channel.is_open:
-                channel.basic_ack(task.delivery_tag)
+                channel.basic_ack(task.delivery_tag, multiple=multiple)
+        clear_contextvars()
+
+    def nack_message(self, task, channel, requeue=True):
+        """NACK task and update status."""
+
+        apply_task_context(task, v=self.version)
+        log.info(f"NACKing message {task.delivery_tag} for task_id {task.task_id}")
+        dataset = task.get_dataset(conn=self.conn)
+        # Sync state to redis
+        if requeue:
+            dataset.mark_for_retry(task)
+            if not dataset.is_task_tracked(task):
+                dataset.add_task(task.task_id, task.operation)
+        else:
+            dataset.mark_done(task)
+        if channel.is_open:
+            channel.basic_nack(delivery_tag=task.delivery_tag, requeue=requeue)
         clear_contextvars()
 
     def run(self):
@@ -391,9 +669,16 @@ class Worker(ABC):
         signal.signal(signal.SIGINT, self.on_signal)
         signal.signal(signal.SIGTERM, self.on_signal)
 
+        self.run_prometheus_server()
+
         # worker threads
         def process():
             return self.process(blocking=True)
+
+        if not self.num_threads:
+            # we need at least one thread
+            # consuming and processing require separate threads
+            self.num_threads = 1
 
         threads = []
         for _ in range(self.num_threads):
@@ -404,20 +689,31 @@ class Worker(ABC):
 
         log.info(f"Worker has {self.num_threads} worker threads.")
 
-        connection = get_rabbitmq_connection()
-        channel = connection.channel()
-        channel.basic_qos(prefetch_count=self.prefetch_count)
-        on_message_callback = functools.partial(self.on_message, args=(connection,))
+        channel = get_rabbitmq_channel()
+        on_message_callback = functools.partial(self.on_message, args=(channel,))
+
         for queue in self.queues:
-            channel.queue_declare(queue=queue, durable=True)
+            declare_rabbitmq_queue(
+                channel, queue, prefetch_count=self.prefetch_count_mapping[queue]
+            )
             channel.basic_consume(queue=queue, on_message_callback=on_message_callback)
         channel.start_consuming()
 
 
-def get_rabbitmq_connection():
+def get_rabbitmq_channel() -> BlockingChannel:
     for attempt in service_retries():
         try:
-            if not hasattr(local, "connection") or not local.connection:
+            if (
+                not hasattr(local, "connection")
+                or not local.connection
+                or not local.connection.is_open
+                or not local.channel
+                or attempt > 0
+            ):
+                log.debug(
+                    f"Establishing RabbitMQ connection. "
+                    f"Attempt: {attempt}/{service_retries().stop}"
+                )
                 credentials = pika.PlainCredentials(
                     settings.RABBITMQ_USERNAME, settings.RABBITMQ_PASSWORD
                 )
@@ -427,18 +723,124 @@ def get_rabbitmq_connection():
                         credentials=credentials,
                         heartbeat=settings.RABBITMQ_HEARTBEAT,
                         blocked_connection_timeout=settings.RABBITMQ_BLOCKED_CONNECTION_TIMEOUT,
+                        client_properties={"connection_name": f"{platform.node()}"},
                     )
                 )
                 local.connection = connection
-            if local.connection.is_open:
-                channel = local.connection.channel()
-                channel.queue_declare(queue=settings.QUEUE_ALEPH, durable=True)
-                channel.queue_declare(queue=settings.QUEUE_INGEST, durable=True)
-                channel.queue_declare(queue=settings.QUEUE_INDEX, durable=True)
-                channel.close()
-                return local.connection
-        except (pika.exceptions.AMQPConnectionError, pika.exceptions.AMQPError):
-            log.exception("RabbitMQ error")
+                local.channel = connection.channel()
+                local.channel.confirm_delivery()
+
+            # Check that the connection is alive
+            result = local.channel.exchange_declare(
+                exchange="amq.topic",
+                exchange_type=pika.exchange_type.ExchangeType.topic,
+                passive=True,
+            )
+            assert isinstance(result.method, pika.spec.Exchange.DeclareOk)
+
+            return local.channel
+
+        except (
+            pika.exceptions.AMQPConnectionError,
+            pika.exceptions.AMQPError,
+            pika.exceptions.ChannelClosedByBroker,
+            pika.exceptions.StreamLostError,
+            AssertionError,
+            ConnectionResetError,
+        ):
+            if attempt == 0:
+                log.debug(
+                    "First attempt to establish RabbitMQ connection failed. Retrying."
+                )
+            else:
+                log.exception(
+                    f"Failed to establish RabbitMQ connection."
+                    f"Attempt: {attempt}/{service_retries().stop}"
+                )
         local.connection = None
+        local.channel = None
+
         backoff(failures=attempt)
     raise RuntimeError("Could not connect to RabbitMQ")
+
+
+def get_task_count(collection_id, redis_conn) -> int:
+    """Get the total task count for a given dataset."""
+    status = Dataset.get_active_dataset_status(conn=redis_conn)
+    try:
+        collection = status["datasets"][str(collection_id)]
+        total = collection["finished"] + collection["running"] + collection["pending"]
+    except KeyError:
+        total = 0
+    return total
+
+
+def get_priority(collection_id, redis_conn) -> int:
+    """
+    Priority buckets for tasks based on the total (pending + running) task count.
+    """
+    if collection_id and Dataset.is_high_prio(redis_conn, collection_id):
+        return 9
+    if collection_id and Dataset.is_low_prio(redis_conn, collection_id):
+        return 0
+    total_task_count = get_task_count(collection_id, redis_conn)
+    if total_task_count < 500:
+        return randrange(7, 9)
+    elif total_task_count < 10000:
+        return randrange(4, 7)
+    return randrange(1, 4)
+
+
+def dataset_from_collection(collection):
+    """servicelayer dataset from a collection"""
+    if collection is None:
+        return NO_COLLECTION
+    return str(collection.id)
+
+
+def queue_task(
+    rmq_channel: BlockingChannel,
+    redis_conn,
+    collection_id: int,
+    stage: str,
+    job_id=None,
+    context=None,
+    **payload,
+):
+    task_id = uuid.uuid4().hex
+    priority = get_priority(collection_id, redis_conn)
+    body = {
+        "collection_id": collection_id,
+        "job_id": job_id or uuid.uuid4().hex,
+        "task_id": task_id,
+        "operation": stage,
+        "context": context,
+        "payload": payload,
+        "priority": priority,
+    }
+    try:
+        rmq_channel.basic_publish(
+            exchange="",
+            routing_key=stage,
+            body=json.dumps(body),
+            properties=pika.BasicProperties(
+                delivery_mode=pika.spec.PERSISTENT_DELIVERY_MODE, priority=priority
+            ),
+        )
+        dataset = Dataset(conn=redis_conn, name=str(collection_id))
+        dataset.add_task(task_id, stage)
+    except (pika.exceptions.UnroutableError, pika.exceptions.AMQPConnectionError):
+        log.exception("Error while queuing task")
+
+
+def flush_queues(rmq_channel: BlockingChannel, redis_conn: Redis, queues: List[str]):
+    try:
+        for queue in queues:
+            try:
+                rmq_channel.queue_purge(queue)
+            except ValueError:
+                logging.exception(f"Error while flushing the {queue} queue")
+    except pika.exceptions.AMQPError:
+        logging.exception("Error while flushing task queue")
+    for key in redis_conn.scan_iter(PREFIX + "*"):
+        redis_conn.delete(key)
