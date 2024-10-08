@@ -96,11 +96,10 @@ class Dataset:
 
         # delete information about running stages
         for stage in self.conn.smembers(self.active_stages_key):
-            stage_key = self.get_stage_key(stage)
-            pipe.delete(stage_key)
-            pipe.delete(make_key(stage_key, "pending"))
-            pipe.delete(make_key(stage_key, "running"))
-            pipe.delete(make_key(stage_key, "finished"))
+            pipe.delete(make_key(PREFIX, "qds", self.name, stage))
+            pipe.delete(make_key(PREFIX, "qds", self.name, stage, "pending"))
+            pipe.delete(make_key(PREFIX, "qds", self.name, stage, "running"))
+            pipe.delete(make_key(PREFIX, "qds", self.name, stage, "finished"))
 
         # delete information about tasks per dataset
         pipe.delete(self.pending_key)
@@ -125,20 +124,23 @@ class Dataset:
         status["last_update"] = last_update
 
         for stage in self.conn.smembers(self.active_stages_key):
-            stage_key = self.get_stage_key(stage)
+            num_pending = unpack_int(
+                self.conn.scard(make_key(PREFIX, "qds", self.name, stage, "pending"))
+            )
+            num_running = unpack_int(
+                self.conn.scard(make_key(PREFIX, "qds", self.name, stage, "running"))
+            )
+            num_finished = unpack_int(
+                self.conn.get(make_key(PREFIX, "qds", self.name, stage, "finished"))
+            )
+
             status["stages"].append(
                 {
                     "job_id": "",
                     "stage": stage,
-                    "pending": max(
-                        0, unpack_int(self.conn.scard(make_key(stage_key, "pending")))
-                    ),
-                    "running": max(
-                        0, unpack_int(self.conn.scard(make_key(stage_key, "running")))
-                    ),
-                    "finished": max(
-                        0, unpack_int(self.conn.get(make_key(stage_key, "finished")))
-                    ),
+                    "pending": max(0, num_pending),
+                    "running": max(0, num_running),
+                    "finished": max(0, num_finished),
                 }
             )
 
@@ -207,14 +209,10 @@ class Dataset:
         # add the dataset to active datasets
         pipe.sadd(self.key, self.name)
 
-        # add the stage to the list of active stages per dataset
+        # update status of stages per dataset
         pipe.sadd(self.active_stages_key, stage)
-
-        # add the task to the set of tasks per stage
-        # and the set of pending tasks per stage
-        stage_key = self.get_stage_key(stage)
-        pipe.sadd(stage_key, task_id)
-        pipe.sadd(make_key(stage_key, "pending"), task_id)
+        pipe.sadd(make_key(PREFIX, "qds", self.name, stage), task_id)
+        pipe.sadd(make_key(PREFIX, "qds", self.name, stage, "pending"), task_id)
 
         # add the task to the set of pending tasks per dataset
         pipe.sadd(self.pending_key, task_id)
@@ -232,11 +230,8 @@ class Dataset:
         # remove the task from the set of pending tasks per dataset
         pipe.srem(self.pending_key, task_id)
 
-        # remove the task from the set of tasks per stage
-        # and the set of pending tasks per stage
-        stage_key = self.get_stage_key(stage)
-        pipe.srem(stage_key, task_id)
-        pipe.srem(make_key(stage_key, "pending"), task_id)
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage), task_id)
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage, "pending"), task_id)
 
         # delete the retry key for this task
         pipe.delete(make_key(PREFIX, "qdj", self.name, "taskretry", task_id))
@@ -255,16 +250,11 @@ class Dataset:
         # add the dataset to active datasets
         pipe.sadd(self.key, self.name)
 
-        # add the stage to the list of active stages per dataset
+        # update status of stages per dataset
         pipe.sadd(self.active_stages_key, stage)
-
-        # add the task to the set of tasks per stage
-        # and the set of running tasks per stage
-        stage_key = self.get_stage_key(stage)
-        pipe.sadd(stage_key, task_id)
-        pipe.sadd(make_key(stage_key, "running"), task_id)
-        # remove the task from the set of pending tasks per stage
-        pipe.srem(make_key(stage_key, "pending"), task_id)
+        pipe.sadd(make_key(PREFIX, "qds", self.name, stage), task_id)
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage, "pending"), task_id)
+        pipe.sadd(make_key(PREFIX, "qds", self.name, stage, "running"), task_id)
 
         # add the task to the set of running tasks per dataset
         pipe.sadd(self.running_key, task_id)
@@ -291,14 +281,12 @@ class Dataset:
         # delete the retry key for the task
         pipe.delete(task.retry_key)
 
-        # remove the task from the set of tasks per stage
-        # and the pending and running tasks per stage
-        stage_key = self.get_stage_key(task.operation)
-        pipe.srem(stage_key, task.task_id)
-        pipe.srem(make_key(stage_key, "pending"), task.task_id)
-        pipe.srem(make_key(stage_key, "running"), task.task_id)
-        # increase the number of finished tasks per stage
-        pipe.incr(make_key(stage_key, "finished"))
+        stage = task.operation
+        task_id = task.task_id
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage), task_id)
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage, "pending"), task_id)
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage, "running"), task_id)
+        pipe.incr(make_key(PREFIX, "qds", self.name, stage, "finished"))
 
         # update dataset timestamps
         pipe.set(self.last_update_key, pack_now())
@@ -312,25 +300,29 @@ class Dataset:
 
     def mark_for_retry(self, task):
         pipe = self.conn.pipeline()
+
         log.info(
             f"Marking task {task.task_id} (stage {task.operation})"
             f" for retry after NACK"
         )
 
-        # remove the task from the pending and running sets of tasks per dataset
-        pipe.srem(self.pending_key, task.task_id)
-        pipe.srem(self.running_key, task.task_id)
+        stage = task.operation
+        task_id = task.task_id
 
-        # remove the task from the set of tasks per stage
-        # and the set of running tasks per stage
-        stage_key = self.get_stage_key(task.operation)
-        pipe.srem(stage_key, task.task_id)
-        pipe.srem(make_key(stage_key, "running"), task.task_id)
+        # remove the task from the pending and running sets of tasks per dataset
+        pipe.srem(self.pending_key, task_id)
+        pipe.srem(self.running_key, task_id)
+
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage, "pending"), task_id)
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage, "running"), task_id)
+        pipe.srem(make_key(PREFIX, "qds", self.name, stage), task_id)
 
         # delete the retry key for the task
         pipe.delete(task.retry_key)
 
         pipe.set(self.last_update_key, pack_now())
+
+        pipe.execute()
 
     def is_done(self):
         status = self.get_status()
@@ -339,17 +331,12 @@ class Dataset:
     def __str__(self):
         return self.name
 
-    def get_stage_key(self, stage):
-        return make_key(PREFIX, "qds", self.name, stage)
-
     def is_task_tracked(self, task: Task):
         tracked = True
 
         dataset = dataset_from_collection_id(task.collection_id)
         task_id = task.task_id
         stage = task.operation
-
-        stage_key = self.get_stage_key(stage)
 
         # A task is considered tracked if
         # the dataset is in the list of active datasets
@@ -359,7 +346,9 @@ class Dataset:
         elif stage not in self.conn.smembers(self.active_stages_key):
             tracked = False
         # and the task_id is in the list of task_ids per stage
-        elif task_id not in self.conn.smembers(stage_key):
+        elif task_id not in self.conn.smembers(
+            make_key(PREFIX, "qds", self.name, stage)
+        ):
             tracked = False
 
         return tracked
@@ -687,7 +676,7 @@ class Worker(ABC):
             return self.process(blocking=True)
 
         if not self.num_threads:
-            # TODO - seems like we need at least one thread
+            # we need at least one thread
             # consuming and processing require separate threads
             self.num_threads = 1
 
