@@ -124,8 +124,6 @@ class Dataset:
         status["last_update"] = last_update
 
         for stage in self.conn.smembers(self.active_stages_key):
-            stage_key = self.get_stage_key(stage)
-
             num_pending = unpack_int(
                 self.conn.scard(make_key(PREFIX, "qds", self.name, stage, "pending"))
             )

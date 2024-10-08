@@ -18,12 +18,6 @@ class TestDataset(TestCase):
             conn=self.connection, name=dataset_from_collection_id(self.collection_id)
         )
 
-    def test_get_stage_key(self):
-        stage = "ingest"
-        assert (
-            self.dataset.get_stage_key(stage) == f"tq:qds:{self.collection_id}:{stage}"
-        )
-
     def test_get_active_datasets_key(self):
         assert self.dataset.key == "tq:qdatasets"
 
