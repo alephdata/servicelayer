@@ -317,9 +317,6 @@ class Dataset:
         pipe.srem(make_key(PREFIX, "qds", self.name, stage, "running"), task_id)
         pipe.srem(make_key(PREFIX, "qds", self.name, stage), task_id)
 
-        # delete the retry key for the task
-        pipe.delete(task.retry_key)
-
         pipe.set(self.last_update_key, pack_now())
 
         pipe.execute()
