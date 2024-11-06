@@ -63,6 +63,9 @@ class Task:
         conn.incr(self.retry_key)
         conn.expire(self.retry_key, settings.REDIS_EXPIRE)
 
+    def clear_retry_count(self, conn):
+        conn.delete(self.retry_key)
+
     def get_dataset(self, conn):
         dataset = Dataset(
             conn=conn, name=dataset_from_collection_id(self.collection_id)
@@ -592,6 +595,7 @@ class Worker(ABC):
             log.exception(
                 f"Task {task.task_id} permanently failed and will be discarded."
             )
+            task.clear_retry_count(self.conn)
             success = False
             retry = False
         except Exception:
