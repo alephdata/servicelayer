@@ -113,8 +113,9 @@ class TaskQueueTest(TestCase):
                         delivery_tag=1, multiple=False, requeue=False
                     )
             assert "Max retries reached for task test-task. Aborting." in ctx.output[0]
-            # Assert that retry count stays the same
-            assert task.get_retry_count(conn) == 1
+            # Assert that the retry count is 0 and the key is gone
+            assert task.get_retry_count(conn) == 0
+            assert conn.get("tq:qdj:2:taskretry:test-task") is None
 
         worker.ack_message(worker.test_task, channel)
         status = dataset.get_status()
