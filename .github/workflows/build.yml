@@ -2,6 +2,9 @@ name: servicelayer
 
 on: [push]
 
+permissions:
+  id-token: write
+
 jobs:
   python:
     runs-on: ubuntu-latest
