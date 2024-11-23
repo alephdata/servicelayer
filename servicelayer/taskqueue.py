@@ -340,14 +340,14 @@ class Dataset:
 
         # A task is considered tracked if
         # the dataset is in the list of active datasets
-        if dataset not in self.conn.smembers(self.key):
+        if not self.conn.sismember(self.key, dataset):
             tracked = False
         # and the stage is in the list of active stages
-        elif stage not in self.conn.smembers(self.active_stages_key):
+        elif not self.conn.sismember(self.active_stages_key, stage):
             tracked = False
         # and the task_id is in the list of task_ids per stage
-        elif task_id not in self.conn.smembers(
-            make_key(PREFIX, "qds", self.name, stage)
+        elif not self.conn.sismember(
+            make_key(PREFIX, "qds", self.name, stage), task_id
         ):
             tracked = False
 
