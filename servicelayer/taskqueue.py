@@ -511,6 +511,10 @@ class Worker(ABC):
                 channel.connection.add_callback_threadsafe(cb)
             except Empty:
                 pass
+            except Exception:
+                log.exception(f"Worker loop has been disrupted while handling task"
+                   f" {task.id or 'Unknown ID'} from collection"
+                   f" {task.collection_id or 'Unknown ID'}")
             finally:
                 clear_contextvars()
 
