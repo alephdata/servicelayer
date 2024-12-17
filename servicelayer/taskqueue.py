@@ -519,6 +519,7 @@ class Worker(ABC):
                 )
             finally:
                 clear_contextvars()
+                self.periodic()
 
     def process_nonblocking(self):
         """Non-blocking worker is used for tests only."""
