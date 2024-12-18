@@ -1,4 +1,5 @@
 import signal
+import faulthandler
 import logging
 from timeit import default_timer
 import sys
@@ -155,6 +156,7 @@ class Worker(ABC):
     def run(self, blocking=True, interval=INTERVAL):
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
+        faulthandler.register(signal.SIGUSR1)
         self.init_internal()
         self.run_prometheus_server()
 
