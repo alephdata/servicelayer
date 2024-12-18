@@ -4,6 +4,7 @@ import json
 import time
 import threading
 import signal
+import faulthandler
 import logging
 import sys
 from abc import ABC, abstractmethod
@@ -675,6 +676,7 @@ class Worker(ABC):
         # Handle kill signals
         signal.signal(signal.SIGINT, self.on_signal)
         signal.signal(signal.SIGTERM, self.on_signal)
+        faulthandler.register(signal.SIGUSR1)
 
         self.run_prometheus_server()
 
