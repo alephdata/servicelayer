@@ -9,7 +9,7 @@ import logging
 import sys
 from abc import ABC, abstractmethod
 import functools
-from queue import Queue, Empty
+from queue import SimpleQueue, Empty
 import platform
 from collections import defaultdict
 from threading import Thread
@@ -450,7 +450,7 @@ class Worker(ABC):
         self.num_threads = num_threads
         self.queues = ensure_list(queues)
         self.version = version
-        self.local_queue = Queue()
+        self.local_queue = SimpleQueue()
         self.prefetch_count_mapping = prefetch_count_mapping
         if settings.SENTRY_DSN:
             import sentry_sdk
