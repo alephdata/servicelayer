@@ -505,8 +505,8 @@ class Worker(ABC):
             except Exception:
                 log.exception(
                     f"Worker loop has been disrupted while handling task"
-                    f" {task.id or 'Unknown ID'} from collection"
-                    f" {task.collection_id or 'Unknown ID'}"
+                    f" {getattr(task, 'task_id', 'Unknown ID')} from collection"
+                    f" {getattr(task, 'collection_id', 'Unknown collection')}"
                 )
             finally:
                 clear_contextvars()
