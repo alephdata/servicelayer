@@ -437,6 +437,7 @@ class Worker(ABC):
     ):
         if settings.SENTRY_DSN:
             import sentry_sdk
+            from sentry_sdk.integrations.threading import ThreadingIntegration
 
             sentry_sdk.init(
                 dsn=settings.SENTRY_DSN,
@@ -444,6 +445,9 @@ class Worker(ABC):
                 release=settings.SENTRY_RELEASE,
                 environment=settings.SENTRY_ENVIRONMENT,
                 send_default_pii=False,
+                disabled_integrations=[
+                    ThreadingIntegration(),
+                ],
             )
 
         self.conn = conn or get_redis()
