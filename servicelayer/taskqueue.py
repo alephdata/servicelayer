@@ -449,6 +449,7 @@ class Worker(ABC):
                     ThreadingIntegration(),
                 ],
             )
+            log.info("Worker initialized Sentry SDK")
 
         self.conn = conn or get_redis()
         self.num_threads = num_threads
