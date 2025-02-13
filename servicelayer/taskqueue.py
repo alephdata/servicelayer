@@ -486,7 +486,7 @@ class Worker(ABC):
         # received. So store the channel. This is useful when executing batched
         # indexing tasks since they are acknowledged late.
         task._channel = channel
-        self.local_queue.put((task, channel))
+        self.local_queue.put_nowait((task, channel))
 
     def process_blocking(self):
         """Blocking worker thread - executes tasks from a queue and periodic tasks"""
