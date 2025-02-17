@@ -9,7 +9,7 @@ import logging
 import sys
 from abc import ABC, abstractmethod
 import functools
-from queue import SimpleQueue, Empty
+from queue import SimpleQueue, Empty, Full
 import platform
 from collections import defaultdict
 from threading import Thread
@@ -455,7 +455,6 @@ class Worker(ABC):
         self.num_threads = num_threads
         self.queues = ensure_list(queues)
         self.version = version
-        self.local_queue = SimpleQueue()
         self.prefetch_count_mapping = prefetch_count_mapping
 
     def run_prometheus_server(self):
@@ -487,7 +486,11 @@ class Worker(ABC):
         # received. So store the channel. This is useful when executing batched
         # indexing tasks since they are acknowledged late.
         task._channel = channel
-        self.local_queue.put_nowait((task, channel))
+        try:
+            self.local_queue.put_nowait((task, channel))
+        except Full:
+            log.info(f"Rejecting task because local queue is full: {task}")
+            channel.basic_nack(delivery_tag=task.delivery_tag, requeue=True)
 
     def process_blocking(self):
         """Blocking worker thread - executes tasks from a queue and periodic tasks"""
@@ -701,6 +704,12 @@ class Worker(ABC):
                 channel, queue, prefetch_count=self.prefetch_count_mapping[queue]
             )
             channel.basic_consume(queue=queue, on_message_callback=on_message_callback)
+
+        # Limit the local queue size to the maximum prefetch count size
+        max_queue_length = max([self.prefetch_count_mapping(q) for q in self.queues])
+        self.local_queue = SimpleQueue(max_size=max_queue_length)
+        log.info(f"local_queue initialized with max_size={max_queue_length}")
+
         channel.start_consuming()
 
 
