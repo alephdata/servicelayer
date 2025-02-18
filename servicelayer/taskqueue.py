@@ -496,7 +496,6 @@ class Worker(ABC):
         try:
             self.local_queue.put_nowait((task, channel))
         except Full:
-            log.info(f"Rejecting task because local queue is full: {task}")
             channel.basic_nack(delivery_tag=task.delivery_tag, requeue=True)
 
     def process_blocking(self):
