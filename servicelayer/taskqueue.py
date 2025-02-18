@@ -458,9 +458,11 @@ class Worker(ABC):
         self.prefetch_count_mapping = prefetch_count_mapping
 
         # Limit the local queue size to the maximum prefetch count size
-        max_queue_length = max([self.prefetch_count_mapping[q] for q in self.queues])
+        max_queue_length = max(
+            [self.prefetch_count_mapping[q] for q in self.queues], default=1
+        )
         self.local_queue = Queue(maxsize=max_queue_length)
-        log.info(f"local_queue initialized with max_size={max_queue_length}")
+        log.info(f"local_queue initialized with maxsize={max_queue_length}")
 
     def run_prometheus_server(self):
         if not settings.PROMETHEUS_ENABLED:
