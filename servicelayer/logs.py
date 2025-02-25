@@ -21,7 +21,6 @@ def configure_logging(level=logging.INFO):
         structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S.%f"),
         structlog.processors.StackInfoRenderer(),
         structlog.dev.set_exc_info,
-        structlog.processors.format_exc_info,
         structlog.processors.UnicodeDecoder(),
     ]
     if settings.LOG_FORMAT == LOG_FORMAT_TEXT:
