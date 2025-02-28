@@ -42,7 +42,6 @@ class FailingWorker(Worker):
 
 
 class TaskQueueTest(TestCase):
-    @pytest.mark.skip(reason="Skipping RabbitMQ specific test.")
     def test_task_queue(self):
         test_queue_name = "sls-queue-ingest"
         conn = get_fakeredis()
@@ -126,7 +125,6 @@ class TaskQueueTest(TestCase):
         assert status["start_time"] is None
         assert status["last_update"] is None
 
-    @pytest.mark.skip(reason="Skipping RabbitMQ specific test.")
     @patch("servicelayer.taskqueue.Dataset.should_execute")
     def test_task_that_shouldnt_execute(self, mock_should_execute):
         test_queue_name = "sls-queue-ingest"
@@ -193,7 +191,6 @@ class TaskQueueTest(TestCase):
         assert dataset.is_task_tracked(Task(**body))
 
 
-@pytest.mark.skip(reason="Skipping RabbitMQ specific test.")
 def test_dataset_get_status():
     conn = get_fakeredis()
     conn.flushdb()
@@ -341,7 +338,6 @@ def test_dataset_get_status():
     assert status["last_update"] is None
 
 
-@pytest.mark.skip(reason="Skipping RabbitMQ specific test.")
 def test_dataset_cancel():
     conn = get_fakeredis()
     conn.flushdb()
@@ -360,7 +356,6 @@ def test_dataset_cancel():
     assert conn.keys() == []
 
 
-@pytest.mark.skip(reason="Skipping RabbitMQ specific test.")
 def test_dataset_mark_done():
     conn = get_fakeredis()
     conn.flushdb()
@@ -404,7 +399,6 @@ def prom_registry():
     yield REGISTRY
 
 
-@pytest.mark.skip(reason="Skipping RabbitMQ specific test.")
 def test_prometheus_metrics_succeeded(prom_registry):
     conn = get_fakeredis()
     rmq_channel = get_rabbitmq_channel()
@@ -445,7 +439,6 @@ def test_prometheus_metrics_succeeded(prom_registry):
     assert duration_count == 1
 
 
-@pytest.mark.skip(reason="Skipping RabbitMQ specific test.")
 def test_prometheus_metrics_failed(prom_registry):
     conn = get_fakeredis()
     rmq_channel = get_rabbitmq_channel()
@@ -488,7 +481,6 @@ def test_prometheus_metrics_failed(prom_registry):
     assert last_attempt == 1
 
 
-@pytest.mark.skip(reason="Skipping RabbitMQ specific test.")
 def test_get_priority_bucket():
     redis = get_fakeredis()
     rmq_channel = get_rabbitmq_channel()
@@ -562,7 +554,6 @@ def test_get_priority_bucket():
         assert get_priority(collection_id, redis) in (1, 2, 3)
 
 
-@pytest.mark.skip(reason="Skipping RabbitMQ specific test.")
 def test_get_priority_lists():
     redis = get_fakeredis()
     collection_id = 1
