@@ -11,10 +11,10 @@ QUEUE_EXPIRE = 84600 * 14
 log = logging.getLogger(__name__)
 
 
-def backoff(failures=0):
+def backoff(failures=0, reason=""):
     """Implement a random, growing delay between external service retries."""
     sleep = max(1, failures - 1) + random.random()
-    log.debug("Back-off: %.2fs", sleep)
+    log.debug(f"Back-off: {sleep:.2f}s {'(reason: ' + reason + ')' if reason else ''}")
     time.sleep(sleep)
 
 
