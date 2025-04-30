@@ -201,7 +201,9 @@ class Dataset:
                 # by RabbitMQ whereas the worker consumer gets the task before
                 # that.
                 # Retry a few times to avoid those cases.
-                backoff(failures=attempt)
+                backoff(
+                    failures=attempt, reason="should_execute waiting for Redis task"
+                )
                 attempt += 1
                 continue
             return _should_execute
@@ -720,6 +722,7 @@ class Worker(ABC):
 
 
 def get_rabbitmq_channel() -> BlockingChannel:
+    backoff_reason = None
     for attempt in service_retries():
         try:
             if (
@@ -766,7 +769,8 @@ def get_rabbitmq_channel() -> BlockingChannel:
             pika.exceptions.StreamLostError,
             AssertionError,
             ConnectionResetError,
-        ):
+        ) as e:
+            backoff_reason = repr(e)
             if attempt == 0:
                 log.debug(
                     "First attempt to establish RabbitMQ connection failed. Retrying."
@@ -779,7 +783,7 @@ def get_rabbitmq_channel() -> BlockingChannel:
         local.connection = None
         local.channel = None
 
-        backoff(failures=attempt)
+        backoff(failures=attempt, reason=backoff_reason)
     raise RuntimeError("Could not connect to RabbitMQ")
 
 

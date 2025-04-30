@@ -106,7 +106,7 @@ class GoogleStorageArchive(VirtualArchive):
                 return content_hash
             except FAILURES:
                 log.exception("Store error in GS")
-                backoff(failures=attempt)
+                backoff(failures=attempt, reason="Store error in GS")
 
     def load_file(self, content_hash, file_name=None, temp_path=None):
         """Retrieve a file from Google storage and put it onto the local file
@@ -120,7 +120,7 @@ class GoogleStorageArchive(VirtualArchive):
                     return path
             except FAILURES:
                 log.exception("Load error in GS")
-                backoff(failures=attempt)
+                backoff(failures=attempt, reason="Load error in GS")
 
         # Returns None for "persistent error" as well as "file not found" :/
         log.debug("[%s] not found, or the backend is down.", content_hash)
@@ -141,7 +141,7 @@ class GoogleStorageArchive(VirtualArchive):
                 return
             except FAILURES:
                 log.exception("Delete error in GS")
-                backoff(failures=attempt)
+                backoff(failures=attempt, reason="Delete error in GS")
 
     def delete_file(self, content_hash):
         """Check if a file with the given hash exists on S3."""
