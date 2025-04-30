@@ -505,8 +505,9 @@ class Worker(ABC):
                 (task, channel) = self.local_queue.get(timeout=TIMEOUT)
                 apply_task_context(task, v=self.version)
                 success, retry = self.handle(task, channel)
+                task_id = task.id if hasattr(task, "id") else "<Unknown>"
                 log.debug(
-                    f"Task {task.task_id} finished with success={success}"
+                    f"Task {task_id} finished with success={success}"
                     f"{'' if success else ' and retry=' + str(retry)}"
                 )
                 if success:
@@ -517,10 +518,14 @@ class Worker(ABC):
             except Empty:
                 pass
             except Exception:
+                collection_id = (
+                    task.collection_id
+                    if hasattr(task, "collection_id")
+                    else "<Unknown>"
+                )
                 log.exception(
                     f"Worker loop has been disrupted while handling task"
-                    f" {getattr(task, 'task_id', 'Unknown ID')} from collection"
-                    f" {getattr(task, 'collection_id', 'Unknown collection')}"
+                    f" {task_id} from collection {collection_id}"
                 )
             finally:
                 clear_contextvars()
