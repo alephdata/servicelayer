@@ -191,11 +191,12 @@ class Dataset:
         and make the worker check with Redis before executing a task.
         """
         attempt = 1
+        max_retries = 1
         while True:
             _should_execute = self.conn.sismember(
                 self.pending_key, task_id
             ) or self.conn.sismember(self.running_key, task_id)
-            if not _should_execute and attempt - 1 in service_retries():
+            if not _should_execute and attempt - 1 in range(max_retries):
                 # Sometimes for new tasks the check fails because the Redis
                 # state gets updated only after the task gets written to disk
                 # by RabbitMQ whereas the worker consumer gets the task before
