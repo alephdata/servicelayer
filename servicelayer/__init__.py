@@ -1,6 +1,6 @@
 import logging
 
-__version__ = "1.24.0"
+__version__ = "1.24.1-rc1"
 
 logging.getLogger("boto3").setLevel(logging.WARNING)
 logging.getLogger("botocore").setLevel(logging.WARNING)
