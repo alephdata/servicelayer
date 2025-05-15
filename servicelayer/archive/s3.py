@@ -143,6 +143,7 @@ class S3Archive(VirtualArchive):
             token = res.get("NextContinuationToken")
 
     def generate_url(self, content_hash, file_name=None, mime_type=None, expire=None):
+        content_hash = sanitize_checksum(content_hash)
         key = self._locate_key(content_hash)
         if key is None:
             return

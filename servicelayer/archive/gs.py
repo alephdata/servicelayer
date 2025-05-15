@@ -160,6 +160,7 @@ class GoogleStorageArchive(VirtualArchive):
             self._delete_blob(blob)
 
     def generate_url(self, content_hash, file_name=None, mime_type=None, expire=None):
+        content_hash = sanitize_checksum(content_hash)
         blob = self._locate_contenthash(content_hash)
         if blob is None:
             return
