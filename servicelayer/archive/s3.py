@@ -5,7 +5,7 @@ from botocore.exceptions import ClientError
 
 from servicelayer import settings
 from servicelayer.archive.virtual import VirtualArchive
-from servicelayer.archive.util import checksum, ensure_path
+from servicelayer.archive.util import checksum, sanitize_checksum, ensure_path
 from servicelayer.archive.util import path_prefix, path_content_hash
 
 log = logging.getLogger(__name__)
@@ -86,6 +86,8 @@ class S3Archive(VirtualArchive):
         file_path = ensure_path(file_path)
         if content_hash is None:
             content_hash = checksum(file_path)
+        else:
+            content_hash = sanitize_checksum(content_hash)
 
         # if content_hash is None:
         #     return
@@ -105,6 +107,7 @@ class S3Archive(VirtualArchive):
     def load_file(self, content_hash, file_name=None, temp_path=None):
         """Retrieve a file from S3 storage and put it onto the local file
         system for further processing."""
+        content_hash = sanitize_checksum(content_hash)
         key = self._locate_key(content_hash)
         if key is not None:
             path = self._local_path(content_hash, file_name, temp_path)
@@ -114,6 +117,7 @@ class S3Archive(VirtualArchive):
     def delete_file(self, content_hash):
         if content_hash is None:
             return
+        content_hash = sanitize_checksum(content_hash)
         prefix = path_prefix(content_hash)
         if prefix is None:
             return
@@ -139,6 +143,7 @@ class S3Archive(VirtualArchive):
             token = res.get("NextContinuationToken")
 
     def generate_url(self, content_hash, file_name=None, mime_type=None, expire=None):
+        content_hash = sanitize_checksum(content_hash)
         key = self._locate_key(content_hash)
         if key is None:
             return
