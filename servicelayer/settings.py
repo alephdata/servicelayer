@@ -24,6 +24,12 @@ AWS_REGION = env.get("AWS_REGION", "eu-west-1")
 # S3 compatible Minio host if using Minio for storage
 ARCHIVE_ENDPOINT_URL = env.get("ARCHIVE_ENDPOINT_URL")
 
+# Google Cloud storage settings
+
+# set this only for Workload Identity Federation, otherwise a service account
+# token is used
+GOOGLE_SERVICE_ACCOUNT_EMAIL = env.get("GOOGLE_SERVICE_ACCOUNT_EMAIL")
+
 # Storage type (either 's3', 'gs', or 'file', i.e. local file system):
 ARCHIVE_TYPE = env.get("ARCHIVE_TYPE", "file")
 ARCHIVE_BUCKET = env.get("ARCHIVE_BUCKET")

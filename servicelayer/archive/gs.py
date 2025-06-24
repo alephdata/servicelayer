@@ -2,12 +2,15 @@ import os
 import logging
 import threading
 from datetime import datetime, timedelta
+from google.auth import compute_engine
+from google.auth.transport import requests
 from google.cloud.storage import Blob
 from google.cloud.storage.client import Client
 from google.api_core.exceptions import TooManyRequests, InternalServerError
 from google.api_core.exceptions import ServiceUnavailable, NotFound
 from google.resumable_media.common import DataCorruption, InvalidResponse
 
+from servicelayer import settings
 from servicelayer.archive.virtual import VirtualArchive
 from servicelayer.archive.util import checksum, ensure_path
 from servicelayer.archive.util import path_prefix, ensure_posix_path
@@ -164,6 +167,24 @@ class GoogleStorageArchive(VirtualArchive):
             disposition = "attachment; filename=%s" % file_name
         if expire is None:
             expire = datetime.utcnow() + timedelta(seconds=self.TIMEOUT)
+        if settings.GOOGLE_SERVICE_ACCOUNT_EMAIL:
+            # If a Google Service Account email is set we assume
+            # a Workload Identity scenario
+            # https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity
+            auth_request = requests.Request()
+            credentials = compute_engine.IDTokenCredentials(
+                auth_request,
+                "",
+                service_account_email=settings.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+            )
+            return blob.generate_signed_url(
+                expire,
+                response_type=mime_type,
+                response_disposition=disposition,
+                credentials=credentials,
+                version="v4",
+            )
+        # Using the service account token for authentication
         return blob.generate_signed_url(
             expire, response_type=mime_type, response_disposition=disposition
         )
