@@ -12,7 +12,7 @@ from google.resumable_media.common import DataCorruption, InvalidResponse
 
 from servicelayer import settings
 from servicelayer.archive.virtual import VirtualArchive
-from servicelayer.archive.util import checksum, ensure_path
+from servicelayer.archive.util import checksum, sanitize_checksum, ensure_path
 from servicelayer.archive.util import path_prefix, ensure_posix_path
 from servicelayer.archive.util import path_content_hash, HASH_LENGTH
 from servicelayer.util import service_retries, backoff
@@ -92,6 +92,8 @@ class GoogleStorageArchive(VirtualArchive):
         file_path = ensure_path(file_path)
         if content_hash is None:
             content_hash = checksum(file_path)
+        else:
+            content_hash = sanitize_checksum(content_hash)
 
         if content_hash is None:
             return
@@ -114,6 +116,7 @@ class GoogleStorageArchive(VirtualArchive):
     def load_file(self, content_hash, file_name=None, temp_path=None):
         """Retrieve a file from Google storage and put it onto the local file
         system for further processing."""
+        content_hash = sanitize_checksum(content_hash)
         for attempt in service_retries():
             try:
                 blob = self._locate_contenthash(content_hash)
@@ -150,6 +153,7 @@ class GoogleStorageArchive(VirtualArchive):
         """Check if a file with the given hash exists on S3."""
         if content_hash is None or len(content_hash) < HASH_LENGTH:
             return
+        content_hash = sanitize_checksum(content_hash)
         prefix = path_prefix(content_hash)
         if prefix is None:
             return
@@ -159,6 +163,7 @@ class GoogleStorageArchive(VirtualArchive):
             self._delete_blob(blob)
 
     def generate_url(self, content_hash, file_name=None, mime_type=None, expire=None):
+        content_hash = sanitize_checksum(content_hash)
         blob = self._locate_contenthash(content_hash)
         if blob is None:
             return

@@ -1,3 +1,4 @@
+import pytest
 from unittest import TestCase
 from urllib.parse import urlparse, parse_qs
 
@@ -26,9 +27,11 @@ class S3ArchiveTest(TestCase):
         assert out == out2, (out, out2)
 
     def test_basic_archive_with_checksum(self):
-        checksum_ = "banana"
-        out = self.archive.archive_file(self.file, checksum_)
-        assert checksum_ == out, (checksum_, out)
+        with pytest.raises(ValueError):
+            self.archive.archive_file(self.file, content_hash="banana")
+
+        out = self.archive.archive_file(self.file, content_hash="01234567890abcdef")
+        assert out == "01234567890abcdef"
 
     def test_generate_url(self):
         content_hash = self.archive.archive_file(self.file)
@@ -60,12 +63,29 @@ class S3ArchiveTest(TestCase):
         assert "https://foo.s3.amazonaws.com/self.py" in url, url
 
     def test_load_file(self):
+        # Invalid content hash
+        with pytest.raises(ValueError):
+            self.archive.load_file("banana")
+
+        # Valid content hash, but file does not exist
+        path = self.archive.load_file("01234567890abcdef")
+        assert path is None
+
+        # Valid content hash, file exists
         out = self.archive.archive_file(self.file)
         path = self.archive.load_file(out)
         assert path is not None, path
         assert path.is_file(), path
 
     def test_cleanup_file(self):
+        # Invalid content hash
+        with pytest.raises(ValueError):
+            self.archive.cleanup_file("banana")
+
+        # File does not exist
+        assert self.archive.cleanup_file("01234567890abcdef") is None
+
+        # Valid content hash, file exists
         out = self.archive.archive_file(self.file)
         self.archive.cleanup_file(out)
         path = self.archive.load_file(out)
@@ -86,6 +106,14 @@ class S3ArchiveTest(TestCase):
         assert len(keys) == 0, keys
 
     def test_delete_file(self):
+        # Invalid content hash
+        with pytest.raises(ValueError):
+            self.archive.delete_file("banana")
+
+        # File does not exist
+        assert self.archive.delete_file("01234567890abcdef") is None
+
+        # Valid content hash, file exists
         out = self.archive.archive_file(self.file)
         path = self.archive.load_file(out)
         assert path is not None, path
