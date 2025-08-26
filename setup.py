@@ -30,7 +30,7 @@ setup(
     install_requires=[
         "banal >= 1.0.6, < 2.0.0",
         "normality >= 2.4.0, < 3.0.0",
-        "fakeredis >= 2.11.2, < 3.0.0",
+        "fakeredis >= 2.11.2, < 2.31.0",
         "redis <= 4.6.0",
         "sqlalchemy >= 1.4.49, < 3.0.0",
         "structlog >= 20.2.0, < 25.0.0",
