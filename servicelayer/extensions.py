@@ -12,7 +12,7 @@ def get_entry_points(section):
     with lock:
         if section not in EXTENSIONS:
             EXTENSIONS[section] = {}
-            for ep in entry_points()[section]:
+            for ep in entry_points(group=section):
                 EXTENSIONS[section][ep.name] = ep.load()
         return EXTENSIONS[section]
 
