@@ -1,3 +1,4 @@
+import pytest
 import shutil
 import tempfile
 from unittest import TestCase
@@ -26,9 +27,11 @@ class FileArchiveTest(TestCase):
         assert out == out2, (out, out2)
 
     def test_basic_archive_with_checksum(self):
-        checksum_ = "banana"
-        out = self.archive.archive_file(self.file, checksum_)
-        assert checksum_ == out, (checksum_, out)
+        with pytest.raises(ValueError):
+            self.archive.archive_file(self.file, content_hash="banana")
+
+        out = self.archive.archive_file(self.file, content_hash="01234567890abcdef")
+        assert out == "01234567890abcdef"
 
     def test_generate_url(self):
         out = self.archive.archive_file(self.file)
@@ -39,6 +42,15 @@ class FileArchiveTest(TestCase):
         assert not self.archive.can_publish
 
     def test_load_file(self):
+        # Invalid content hash
+        with pytest.raises(ValueError):
+            self.archive.load_file("banana")
+
+        # Valid content hash, but file does not exist
+        path = self.archive.load_file("01234567890abcdef")
+        assert path is None
+
+        # Valid content hash, file exists
         out = self.archive.archive_file(self.file)
         path = self.archive.load_file(out)
         assert path is not None, path
@@ -64,10 +76,17 @@ class FileArchiveTest(TestCase):
         assert len(keys) == 0, keys
 
     def test_delete_file(self):
+        # Invalid content hash
+        with pytest.raises(ValueError):
+            self.archive.delete_file("banana")
+
+        # File does not exist
+        assert self.archive.delete_file("01234567890abcdef") is None
+
+        # Valid content hash, file exists
         out = self.archive.archive_file(self.file)
         path = self.archive.load_file(out)
         assert path is not None, path
-        self.archive.cleanup_file(out)
-        self.archive.delete_file(out)
+        assert self.archive.delete_file(out) is None
         path = self.archive.load_file(out)
         assert path is None, path

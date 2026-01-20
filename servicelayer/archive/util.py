@@ -1,4 +1,5 @@
 import os
+import string
 from hashlib import sha1
 from pathlib import Path
 
@@ -30,6 +31,18 @@ def checksum(file_name):
                     break
                 digest.update(block)
         return str(digest.hexdigest())
+
+
+def sanitize_checksum(checksum):
+    """Normalize the checksum. Raises an error if the given checksum invalid."""
+    if not checksum:
+        raise ValueError("Checksum is empty")
+
+    for char in checksum:
+        if char not in string.hexdigits:
+            raise ValueError(f'Checksum contains invalid character "{char}"')
+
+    return checksum
 
 
 def path_prefix(content_hash):
