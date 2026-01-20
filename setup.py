@@ -47,7 +47,7 @@ setup(
         ],
         "dev": [
             "twine",
-            "moto < 5",
+            "moto < 6",
             "boto3 >= 1.11.9, <2.0.0",
             "pytest >= 3.6",
             "coverage",
